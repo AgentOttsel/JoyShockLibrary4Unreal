@@ -147,7 +147,7 @@ namespace GamepadMotionHelpers
 		GamepadMotionSettings* Settings;
 	};
 
-	enum CalibrationMode
+	enum CalibrationMode : uint8
 	{
 		Manual = 0,
 		Stillness = 1,
@@ -1098,7 +1098,7 @@ inline void GamepadMotion::ProcessMotion(float gyroX, float gyroY, float gyroZ,
 	}
 	else if (CurrentCalibrationMode & GamepadMotionHelpers::CalibrationMode::Stillness)
 	{
-		AutoCalibration.AddSampleStillness(GamepadMotionHelpers::Vec(gyroX, gyroY, gyroZ), GamepadMotionHelpers::Vec(accelX, accelY, accelZ), deltaTime, CurrentCalibrationMode & GamepadMotionHelpers::CalibrationMode::SensorFusion);
+		AutoCalibration.AddSampleStillness(GamepadMotionHelpers::Vec(gyroX, gyroY, gyroZ), GamepadMotionHelpers::Vec(accelX, accelY, accelZ), deltaTime, (CurrentCalibrationMode & GamepadMotionHelpers::CalibrationMode::SensorFusion) != 0);
 		AutoCalibration.NoSampleSensorFusion();
 	}
 	else

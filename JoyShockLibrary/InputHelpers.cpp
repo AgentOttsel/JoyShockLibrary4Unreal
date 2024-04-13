@@ -1,3 +1,4 @@
+#pragma once
 #include "JoyShockLibrary.h"
 #include "JoyShock.cpp"
 
@@ -16,7 +17,7 @@ bool handle_input(JoyShock *jc, uint8_t *packet, int len, bool &hasIMU) {
 	jc->last_simple_state = jc->simple_state;
 	jc->simple_state.buttons = 0;
 	jc->last_imu_state = jc->imu_state;
-	IMU_STATE imu_state;
+	FIMUState imu_state;
 	// delta time
 	auto time_now = std::chrono::steady_clock::now();
 	jc->delta_time = (float)(std::chrono::duration_cast<std::chrono::microseconds>(time_now - jc->last_polled).count() / 1000000.0);
@@ -140,12 +141,12 @@ bool handle_input(JoyShock *jc, uint8_t *packet, int len, bool &hasIMU) {
 			jc->simple_state.stickRX = (std::fmin)(1.0f, (stick2_x - 127.0f) / 127.0f);
 			jc->simple_state.stickRY = (std::fmin)(1.0f, (stick2_y - 127.0f) / 127.0f);
 
-			jc->modifying_lock.lock();
+			jc->modifying_lock.Lock();
 			jc->push_sensor_samples(imu_state.gyroX, imu_state.gyroY, imu_state.gyroZ,
 					imu_state.accelX, imu_state.accelY, imu_state.accelZ, jc->delta_time);
 
 			jc->get_calibrated_gyro(imu_state.gyroX, imu_state.gyroY, imu_state.gyroZ);
-			jc->modifying_lock.unlock();
+			jc->modifying_lock.Unlock();
 
 			jc->imu_state = imu_state;
 		}
@@ -263,12 +264,12 @@ bool handle_input(JoyShock *jc, uint8_t *packet, int len, bool &hasIMU) {
 		jc->simple_state.stickRX = (std::fmin)(1.0f, (stick2_x - 127.0f) / 127.0f);
 		jc->simple_state.stickRY = (std::fmin)(1.0f, (stick2_y - 127.0f) / 127.0f);
 
-		jc->modifying_lock.lock();
+		jc->modifying_lock.Lock();
 		jc->push_sensor_samples(imu_state.gyroX, imu_state.gyroY, imu_state.gyroZ,
 				imu_state.accelX, imu_state.accelY, imu_state.accelZ, jc->delta_time);
 
 		jc->get_calibrated_gyro(imu_state.gyroX, imu_state.gyroY, imu_state.gyroZ);
-		jc->modifying_lock.unlock();
+		jc->modifying_lock.Unlock();
 
 		jc->imu_state = imu_state;
 
@@ -538,12 +539,12 @@ bool handle_input(JoyShock *jc, uint8_t *packet, int len, bool &hasIMU) {
 		}
 	}
 
-	jc->modifying_lock.lock();
+	jc->modifying_lock.Lock();
 	jc->push_sensor_samples(imu_state.gyroX, imu_state.gyroY, imu_state.gyroZ,
 		imu_state.accelX, imu_state.accelY, imu_state.accelZ, jc->delta_time);
 
 	jc->get_calibrated_gyro(imu_state.gyroX, imu_state.gyroY, imu_state.gyroZ);
-	jc->modifying_lock.unlock();
+	jc->modifying_lock.Unlock();
 
 	jc->imu_state = imu_state;
 

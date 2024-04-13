@@ -1,11 +1,15 @@
 // JoyShockLibrary.h - Contains declarations of functions
 #pragma once
 
-#if _MSC_VER // this is defined when compiling with Visual Studio
+#include "JoyShockLibrary.generated.h"
+
+DECLARE_LOG_CATEGORY_EXTERN(LogJoyShockLibrary, Verbose, All);
+
+/*#if _MSC_VER // this is defined when compiling with Visual Studio
 #define JOY_SHOCK_API __declspec(dllexport) // Visual Studio needs annotating exported functions with this
 #else
 #define JOY_SHOCK_API // XCode does not need annotating exported functions, so define is empty
-#endif
+#endif*/
 
 #define JS_TYPE_JOYCON_LEFT 1
 #define JS_TYPE_JOYCON_RIGHT 2
@@ -80,173 +84,367 @@
 #define DS5_PLAYER_4 27
 #define DS5_PLAYER_5 31
 
-typedef struct JOY_SHOCK_STATE {
-	int buttons = 0;
+USTRUCT(BlueprintType)
+struct JOYSHOCKLIBRARY4UNREAL_API FJoyShockState // typedef struct JOY_SHOCK_STATE
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(BlueprintReadOnly)
+	int32 buttons = 0;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float lTrigger = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float rTrigger = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float stickLX = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float stickLY = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float stickRX = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float stickRY = 0.f;
-} JOY_SHOCK_STATE;
+}; // JOY_SHOCK_STATE;
 
-typedef struct IMU_STATE {
+USTRUCT(BlueprintType)
+struct JOYSHOCKLIBRARY4UNREAL_API FIMUState // typedef struct IMU_STATE
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(BlueprintReadOnly)
 	float accelX = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float accelY = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float accelZ = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float gyroX = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float gyroY = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float gyroZ = 0.f;
-} IMU_STATE;
+}; // IMU_STATE;
 
-typedef struct MOTION_STATE {
+USTRUCT(BlueprintType)
+struct JOYSHOCKLIBRARY4UNREAL_API FMotionState // typedef struct MOTION_STATE
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly)
 	float quatW = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float quatX = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float quatY = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float quatZ = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float accelX = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float accelY = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float accelZ = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float gravX = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float gravY = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float gravZ = 0.f;
-} MOTION_STATE;
+}; // MOTION_STATE;
 
-typedef struct TOUCH_STATE {
-	int t0Id = 0;
-	int t1Id = 0;
+USTRUCT(BlueprintType)
+struct JOYSHOCKLIBRARY4UNREAL_API FTouchState // typedef struct TOUCH_STATE {
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(BlueprintReadOnly)
+	int32 t0Id = 0;
+
+	UPROPERTY(BlueprintReadOnly)
+	int32 t1Id = 0;
+
+	UPROPERTY(BlueprintReadOnly)
 	bool t0Down = false;
+
+	UPROPERTY(BlueprintReadOnly)
 	bool t1Down = false;
+
+	UPROPERTY(BlueprintReadOnly)
 	float t0X = 0.f;
+
+	UPROPERTY(BlueprintReadOnly)
 	float t0Y = 0.f;
+
+	UPROPERTY(BlueprintReadOnly)
 	float t1X = 0.f;
+
+	UPROPERTY(BlueprintReadOnly)
 	float t1Y = 0.f;
-} TOUCH_STATE;
+}; // TOUCH_STATE;
 
-typedef struct JSL_AUTO_CALIBRATION {
+USTRUCT(BlueprintType)
+struct JOYSHOCKLIBRARY4UNREAL_API FJSLAutoCalibration // typedef struct JSL_AUTO_CALIBRATION {
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(BlueprintReadOnly)
 	float confidence = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	bool autoCalibrationEnabled = false;
+	
+	UPROPERTY(BlueprintReadOnly)
 	bool isSteady = false;
-} JSL_AUTO_CALIBRATION;
+}; // JSL_AUTO_CALIBRATION;
 
-typedef struct JSL_SETTINGS {
-	int gyroSpace = 0;
-	int colour = 0;
-	int playerNumber = 0;
-	int controllerType = 0;
-	int splitType = 0;
+USTRUCT(BlueprintType)
+struct JOYSHOCKLIBRARY4UNREAL_API FJSLSettings // typedef struct JSL_SETTINGS {
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly)
+	int32 gyroSpace = 0;
+
+	UPROPERTY(BlueprintReadOnly)
+	int32 colour = 0;
+
+	UPROPERTY(BlueprintReadOnly)
+	int32 playerNumber = 0;
+
+	UPROPERTY(BlueprintReadOnly)
+	int32 controllerType = 0;
+
+	UPROPERTY(BlueprintReadOnly)
+	int32 splitType = 0;
+
+	UPROPERTY(BlueprintReadOnly)
 	bool isCalibrating = false;
+
+	UPROPERTY(BlueprintReadOnly)
 	bool autoCalibrationEnabled = false;
+
+	UPROPERTY(BlueprintReadOnly)
 	bool isConnected = false;
-} JSL_SETTINGS;
+}; // JSL_SETTINGS;
 
-extern "C" JOY_SHOCK_API int JslConnectDevices();
-extern "C" JOY_SHOCK_API int JslGetConnectedDeviceHandles(int* deviceHandleArray, int size);
-extern "C" JOY_SHOCK_API void JslDisconnectAndDisposeAll();
-extern "C" JOY_SHOCK_API bool JslStillConnected(int deviceId);
+UCLASS()
+class UJoyShockLibrary : public UBlueprintFunctionLibrary
+{
+	GENERATED_BODY()
 
-// get buttons as bits in the following order, using North South East West to name face buttons to avoid ambiguity between Xbox and Nintendo layouts:
-// 0x00001: up
-// 0x00002: down
-// 0x00004: left
-// 0x00008: right
-// 0x00010: plus
-// 0x00020: minus
-// 0x00040: left stick click
-// 0x00080: right stick click
-// 0x00100: L
-// 0x00200: R
-// ZL and ZR are reported as analogue inputs (GetLeftTrigger, GetRightTrigger), because DS4 and XBox controllers use analogue triggers, but we also have them as raw buttons
-// 0x00400: ZL
-// 0x00800: ZR
-// 0x01000: S
-// 0x02000: E
-// 0x04000: W
-// 0x08000: N
-// 0x10000: home / PS
-// 0x20000: capture / touchpad-click
-// 0x40000: SL
-// 0x80000: SR
-// These are the best way to get all the buttons/triggers/sticks, gyro/accelerometer (IMU), orientation/acceleration/gravity (Motion), or touchpad
-extern "C" JOY_SHOCK_API JOY_SHOCK_STATE JslGetSimpleState(int deviceId);
-extern "C" JOY_SHOCK_API IMU_STATE JslGetIMUState(int deviceId);
-extern "C" JOY_SHOCK_API MOTION_STATE JslGetMotionState(int deviceId);
-extern "C" JOY_SHOCK_API TOUCH_STATE JslGetTouchState(int deviceId, bool previous = false);
-extern "C" JOY_SHOCK_API bool JslGetTouchpadDimension(int deviceId, int &sizeX, int &sizeY);
+public:
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	static JOYSHOCKLIBRARY4UNREAL_API int32 JslConnectDevices();
 
-extern "C" JOY_SHOCK_API int JslGetButtons(int deviceId);
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API int32 JslGetConnectedDeviceHandles(/* int* */ TArray<int32>& OutDeviceHandleArray, int32 InSize);
 
-// get thumbsticks
-extern "C" JOY_SHOCK_API float JslGetLeftX(int deviceId);
-extern "C" JOY_SHOCK_API float JslGetLeftY(int deviceId);
-extern "C" JOY_SHOCK_API float JslGetRightX(int deviceId);
-extern "C" JOY_SHOCK_API float JslGetRightY(int deviceId);
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslDisconnectAndDisposeAll();
 
-// get triggers. Switch controllers don't have analogue triggers, but will report 0.0 or 1.0 so they can be used in the same way as others
-extern "C" JOY_SHOCK_API float JslGetLeftTrigger(int deviceId);
-extern "C" JOY_SHOCK_API float JslGetRightTrigger(int deviceId);
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API bool JslStillConnected(int32 deviceId);
 
-// get gyro
-extern "C" JOY_SHOCK_API float JslGetGyroX(int deviceId);
-extern "C" JOY_SHOCK_API float JslGetGyroY(int deviceId);
-extern "C" JOY_SHOCK_API float JslGetGyroZ(int deviceId);
+	// get buttons as bits in the following order, using North South East West to name face buttons to avoid ambiguity between Xbox and Nintendo layouts:
+	// 0x00001: up
+	// 0x00002: down
+	// 0x00004: left
+	// 0x00008: right
+	// 0x00010: plus
+	// 0x00020: minus
+	// 0x00040: left stick click
+	// 0x00080: right stick click
+	// 0x00100: L
+	// 0x00200: R
+	// ZL and ZR are reported as analogue inputs (GetLeftTrigger, GetRightTrigger), because DS4 and XBox controllers use analogue triggers, but we also have them as raw buttons
+	// 0x00400: ZL
+	// 0x00800: ZR
+	// 0x01000: S
+	// 0x02000: E
+	// 0x04000: W
+	// 0x08000: N
+	// 0x10000: home / PS
+	// 0x20000: capture / touchpad-click
+	// 0x40000: SL
+	// 0x80000: SR
+	// These are the best way to get all the buttons/triggers/sticks, gyro/accelerometer (IMU), orientation/acceleration/gravity (Motion), or touchpad
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API FJoyShockState JslGetSimpleState(int32 deviceId);
 
-// get accumulated average gyro since this function was last called or last flushed values
-extern "C" JOY_SHOCK_API void JslGetAndFlushAccumulatedGyro(int deviceId, float& gyroX, float& gyroY, float& gyroZ);
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API FIMUState JslGetIMUState(int32 deviceId);
 
-// set gyro space. JslGetGyro*, JslGetAndFlushAccumulatedGyro, JslGetIMUState, and the IMU_STATEs reported in the callback functions will use one of 3 transformations:
-// 0 = local space -> no transformation is done on gyro input
-// 1 = world space -> gyro input is transformed based on the calculated gravity direction to account for the player's preferred controller orientation
-// 2 = player space -> a simple combination of local and world space that is as adaptive as world space but is as robust as local space
-extern "C" JOY_SHOCK_API void JslSetGyroSpace(int deviceId, int gyroSpace);
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API FMotionState JslGetMotionState(int32 deviceId);
 
-// get accelerometor
-extern "C" JOY_SHOCK_API float JslGetAccelX(int deviceId);
-extern "C" JOY_SHOCK_API float JslGetAccelY(int deviceId);
-extern "C" JOY_SHOCK_API float JslGetAccelZ(int deviceId);
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API FTouchState JslGetTouchState(int32 deviceId, bool previous = false);
 
-// get touchpad
-extern "C" JOY_SHOCK_API int JslGetTouchId(int deviceId, bool secondTouch = false);
-extern "C" JOY_SHOCK_API bool JslGetTouchDown(int deviceId, bool secondTouch = false);
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API bool JslGetTouchpadDimension(int32 deviceId, int32 &sizeX, int32 &sizeY);
 
-extern "C" JOY_SHOCK_API float JslGetTouchX(int deviceId, bool secondTouch = false);
-extern "C" JOY_SHOCK_API float JslGetTouchY(int deviceId, bool secondTouch = false);
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API int32 JslGetButtons(int32 deviceId);
 
-// analog parameters have different resolutions depending on device
-extern "C" JOY_SHOCK_API float JslGetStickStep(int deviceId);
-extern "C" JOY_SHOCK_API float JslGetTriggerStep(int deviceId);
-extern "C" JOY_SHOCK_API float JslGetPollRate(int deviceId);
-extern "C" JOY_SHOCK_API float JslGetTimeSinceLastUpdate(int deviceId);
+	// get thumbsticks
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetLeftX(int32 deviceId);
 
-// calibration
-extern "C" JOY_SHOCK_API void JslResetContinuousCalibration(int deviceId);
-extern "C" JOY_SHOCK_API void JslStartContinuousCalibration(int deviceId);
-extern "C" JOY_SHOCK_API void JslPauseContinuousCalibration(int deviceId);
-extern "C" JOY_SHOCK_API void JslSetAutomaticCalibration(int deviceId, bool enabled);
-extern "C" JOY_SHOCK_API void JslGetCalibrationOffset(int deviceId, float& xOffset, float& yOffset, float& zOffset);
-extern "C" JOY_SHOCK_API void JslSetCalibrationOffset(int deviceId, float xOffset, float yOffset, float zOffset);
-extern "C" JOY_SHOCK_API JSL_AUTO_CALIBRATION JslGetAutoCalibrationStatus(int deviceId);
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetLeftY(int32 deviceId);
 
-// this function will get called for each input event from each controller
-extern "C" JOY_SHOCK_API void JslSetCallback(void(*callback)(int, JOY_SHOCK_STATE, JOY_SHOCK_STATE, IMU_STATE, IMU_STATE, float));
-// this function will get called for each input event, even if touch data didn't update
-extern "C" JOY_SHOCK_API void JslSetTouchCallback(void(*callback)(int, TOUCH_STATE, TOUCH_STATE, float));
-// this function will get called for each device when it is newly connected
-extern "C" JOY_SHOCK_API void JslSetConnectCallback(void(*callback)(int));
-// this function will get called for each device when it is disconnected
-extern "C" JOY_SHOCK_API void JslSetDisconnectCallback(void(*callback)(int, bool));
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetRightX(int32 deviceId);
 
-// super-getter for reading a whole lot of state at once
-extern "C" JOY_SHOCK_API JSL_SETTINGS JslGetControllerInfoAndSettings(int deviceId);
-// what kind of controller is this?
-extern "C" JOY_SHOCK_API int JslGetControllerType(int deviceId);
-// is this a left, right, or full controller?
-extern "C" JOY_SHOCK_API int JslGetControllerSplitType(int deviceId);
-// what colour is the controller (not all controllers support this; those that don't will report white)
-extern "C" JOY_SHOCK_API int JslGetControllerColour(int deviceId);
-// set controller light colour (not all controllers have a light whose colour can be set, but that just means nothing will be done when this is called -- no harm)
-extern "C" JOY_SHOCK_API void JslSetLightColour(int deviceId, int colour);
-// set controller rumble
-extern "C" JOY_SHOCK_API void JslSetRumble(int deviceId, int smallRumble, int bigRumble);
-// set controller player number indicator (not all controllers have a number indicator which can be set, but that just means nothing will be done when this is called -- no harm)
-extern "C" JOY_SHOCK_API void JslSetPlayerNumber(int deviceId, int number);
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetRightY(int32 deviceId);
+
+	// get triggers. Switch controllers don't have analogue triggers, but will report 0.0 or 1.0 so they can be used in the same way as others
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetLeftTrigger(int32 deviceId);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetRightTrigger(int32 deviceId);
+
+	// get gyro
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetGyroX(int32 deviceId);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetGyroY(int32 deviceId);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetGyroZ(int32 deviceId);
+
+	// get accumulated average gyro since this function was last called or last flushed values
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslGetAndFlushAccumulatedGyro(int32 deviceId, float& gyroX, float& gyroY, float& gyroZ);
+
+	// set gyro space. JslGetGyro*, JslGetAndFlushAccumulatedGyro, JslGetIMUState, and the IMU_STATEs reported in the callback functions will use one of 3 transformations:
+	// 0 = local space -> no transformation is done on gyro input
+	// 1 = world space -> gyro input is transformed based on the calculated gravity direction to account for the player's preferred controller orientation
+	// 2 = player space -> a simple combination of local and world space that is as adaptive as world space but is as robust as local space
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslSetGyroSpace(int32 deviceId, int32 gyroSpace);
+
+	// get accelerometer
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetAccelX(int32 deviceId);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetAccelY(int32 deviceId);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetAccelZ(int32 deviceId);
+
+	// get touchpad
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API int32 JslGetTouchId(int32 deviceId, bool secondTouch = false);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API bool JslGetTouchDown(int32 deviceId, bool secondTouch = false);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetTouchX(int32 deviceId, bool secondTouch = false);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetTouchY(int32 deviceId, bool secondTouch = false);
+
+	// analog parameters have different resolutions depending on device
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetStickStep(int32 deviceId);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetTriggerStep(int32 deviceId);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetPollRate(int32 deviceId);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API float JslGetTimeSinceLastUpdate(int32 deviceId);
+
+	// calibration
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslResetContinuousCalibration(int32 deviceId);
+
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslStartContinuousCalibration(int32 deviceId);
+
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslPauseContinuousCalibration(int32 deviceId);
+
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslSetAutomaticCalibration(int32 deviceId, bool enabled);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslGetCalibrationOffset(int32 deviceId, float& xOffset, float& yOffset, float& zOffset);
+
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslSetCalibrationOffset(int32 deviceId, float xOffset, float yOffset, float zOffset);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API FJSLAutoCalibration JslGetAutoCalibrationStatus(int32 deviceId);
+
+	// this function will get called for each input event from each controller
+	// UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslSetCallback(void(*callback)(int, FJoyShockState, FJoyShockState, FIMUState, FIMUState, float));
+
+	// this function will get called for each input event, even if touch data didn't update
+	// UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslSetTouchCallback(void(*callback)(int, FTouchState, FTouchState, float));
+
+	// this function will get called for each device when it is newly connected
+	// UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslSetConnectCallback(void(*callback)(int));
+
+	// this function will get called for each device when it is disconnected
+	// UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslSetDisconnectCallback(void(*callback)(int, bool));
+
+	// super-getter for reading a whole lot of state at once
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API FJSLSettings JslGetControllerInfoAndSettings(int32 deviceId);
+
+	// what kind of controller is this?
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API int32 JslGetControllerType(int32 deviceId);
+
+	// is this a left, right, or full controller?
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API int32 JslGetControllerSplitType(int32 deviceId);
+
+	// what colour is the controller (not all controllers support this; those that don't will report white)
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API int32 JslGetControllerColour(int32 deviceId);
+
+	// set controller light colour (not all controllers have a light whose colour can be set, but that just means nothing will be done when this is called -- no harm)
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslSetLightColour(int32 deviceId, int32 colour);
+
+	// set controller rumble
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslSetRumble(int32 deviceId, int32 smallRumble, int32 bigRumble);
+
+	// set controller player number indicator (not all controllers have a number indicator which can be set, but that just means nothing will be done when this is called -- no harm)
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslSetPlayerNumber(int32 deviceId, int32 number);
+};

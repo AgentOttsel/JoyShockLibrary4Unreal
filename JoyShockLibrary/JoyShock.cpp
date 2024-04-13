@@ -1,6 +1,7 @@
 #pragma once
 
 #include "JoyShockLibrary.h"
+#include "GamepadMotion.hpp"
 #include <bitset>
 #include "hidapi.h"
 #include <chrono>
@@ -64,14 +65,14 @@ public:
 	std::chrono::steady_clock::time_point last_polled;
 	float delta_time = 1.0;
 
-	JOY_SHOCK_STATE simple_state = {};
-	JOY_SHOCK_STATE last_simple_state = {};
+	FJoyShockState simple_state = {};
+	FJoyShockState last_simple_state = {};
 
-	IMU_STATE imu_state = {};
-	IMU_STATE last_imu_state = {};
+	FIMUState imu_state = {};
+	FIMUState last_imu_state = {};
 
-	TOUCH_STATE touch_state = {};
-	TOUCH_STATE last_touch_state = {};
+	FTouchState touch_state = {};
+	FTouchState last_touch_state = {};
 
 	GamepadMotion motion;
 
@@ -82,7 +83,7 @@ public:
 
 	int gyroSpace = 0;
 
-	std::mutex modifying_lock;
+	FCriticalSection modifying_lock;
 
 	int8_t dstick;
 	uint8_t battery;
@@ -351,7 +352,7 @@ public:
 	}
 
 	void push_cumulative_gyro(float gyroX, float gyroY, float gyroZ) {
-		modifying_lock.lock();
+		modifying_lock.Lock();
 		if (num_cumulative_gyro_samples == 0) {
 			cumulative_gyro_x = 0.f;
 			cumulative_gyro_y = 0.f;
@@ -361,7 +362,7 @@ public:
 		cumulative_gyro_y += gyroY;
 		cumulative_gyro_z += gyroZ;
 		num_cumulative_gyro_samples++;
-		modifying_lock.unlock();
+		modifying_lock.Unlock();
 	}
 
 	void get_and_flush_cumulative_gyro(float& gyroX, float& gyroY, float& gyroZ) {
@@ -383,7 +384,7 @@ public:
 		}
 		float gravX, gravY, gravZ;
 		motion.GetGravity(gravX, gravY, gravZ);
-		modifying_lock.unlock();
+		modifying_lock.Unlock();
 		switch (gyroSpace)
 		{
 		default:
@@ -401,9 +402,9 @@ public:
 	}
 
 	void reset_continuous_calibration() {
-		modifying_lock.lock();
+		modifying_lock.Lock();
 		motion.ResetContinuousCalibration();
-		modifying_lock.unlock();
+		modifying_lock.Unlock();
 	}
 
 	void push_sensor_samples(float gyroX, float gyroY, float gyroZ, float accelX, float accelY, float accelZ, float deltaTime) {
@@ -415,26 +416,26 @@ public:
 		motion.GetCalibratedGyro(gyroX, gyroY, gyroZ);
 	}
 
-	MOTION_STATE get_motion_state()
+	FMotionState get_motion_state()
 	{
-		MOTION_STATE motionState = MOTION_STATE();
-		modifying_lock.lock();
+		FMotionState motionState = FMotionState();
+		modifying_lock.Lock();
 		motion.GetProcessedAcceleration(motionState.accelX, motionState.accelY, motionState.accelZ);
 		motion.GetOrientation(motionState.quatW, motionState.quatX, motionState.quatY, motionState.quatZ);
 		motion.GetGravity(motionState.gravX, motionState.gravY, motionState.gravZ);
-		modifying_lock.unlock();
+		modifying_lock.Unlock();
 		return motionState;
 	}
 
-	IMU_STATE get_transformed_imu_state(IMU_STATE& imu_state)
+	FIMUState get_transformed_imu_state(FIMUState& imu_state)
 	{
 		float gyroX, gyroY, gyroZ, gravX, gravY, gravZ;
-		modifying_lock.lock();
+		modifying_lock.Lock();
 		motion.GetGravity(gravX, gravY, gravZ);
 		gyroX = imu_state.gyroX;
 		gyroY = imu_state.gyroY;
 		gyroZ = imu_state.gyroZ;
-		modifying_lock.unlock();
+		modifying_lock.Unlock();
 		switch (gyroSpace)
 		{
 		default:
@@ -449,7 +450,7 @@ public:
 			gyroZ = 0.f;
 			break;
 		}
-		IMU_STATE transformedState = IMU_STATE();
+		FIMUState transformedState = FIMUState();
 		transformedState.accelX = imu_state.accelX;
 		transformedState.accelY = imu_state.accelY;
 		transformedState.accelZ = imu_state.accelZ;
