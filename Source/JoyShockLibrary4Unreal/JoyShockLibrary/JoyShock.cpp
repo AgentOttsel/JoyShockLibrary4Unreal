@@ -366,7 +366,7 @@ public:
 	}
 
 	void get_and_flush_cumulative_gyro(float& gyroX, float& gyroY, float& gyroZ) {
-		modifying_lock.lock();
+		modifying_lock.Lock();
 		if (num_cumulative_gyro_samples == 0) {
 			gyroX = cumulative_gyro_x;
 			gyroX = cumulative_gyro_y;
