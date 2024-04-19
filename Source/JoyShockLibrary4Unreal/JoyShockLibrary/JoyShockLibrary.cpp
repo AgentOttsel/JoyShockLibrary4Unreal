@@ -12,7 +12,6 @@
 #include <atomic>
 #include "GamepadMotion.hpp"
 #include "JoyShock.cpp"
-#include "JoyShockDualSenseTriggerExtension.cpp"
 #include "InputHelpers.cpp"
 
 DEFINE_LOG_CATEGORY(LogJoyShockLibrary)

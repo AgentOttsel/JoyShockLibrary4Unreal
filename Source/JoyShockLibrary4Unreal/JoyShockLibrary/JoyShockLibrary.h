@@ -1,7 +1,5 @@
 // JoyShockLibrary.h - Contains declarations of functions
 #pragma once
-#include "TriggerEffectGenerator.h"
-
 #include "JoyShockLibrary.generated.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogJoyShockLibrary, Verbose, All);
