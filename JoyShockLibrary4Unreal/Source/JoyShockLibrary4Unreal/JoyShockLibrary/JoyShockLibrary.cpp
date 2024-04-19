@@ -12,6 +12,7 @@
 #include <atomic>
 #include "GamepadMotion.hpp"
 #include "JoyShock.cpp"
+#include "JoyShockDualSenseTriggerExtension.cpp"
 #include "InputHelpers.cpp"
 
 DEFINE_LOG_CATEGORY(LogJoyShockLibrary)
@@ -599,6 +600,18 @@ FMotionState UJoyShockLibrary::JslGetMotionState(int32 deviceId)
 	return {};
 }
 
+FJSL4UMotionState UJoyShockLibrary::JSL4UGetMotionState(int32 DeviceID)
+{
+	FMotionState NativeMotionState = JslGetMotionState(DeviceID);
+	FJSL4UMotionState UnrealMotionState = {};
+	UnrealMotionState.Orientation = FQuat(-NativeMotionState.quatZ, NativeMotionState.quatX, -NativeMotionState.quatY, NativeMotionState.quatW);
+
+	// TODO: Check handedness and sign
+	UnrealMotionState.Acceleration = FVector(NativeMotionState.accelZ, NativeMotionState.accelX, NativeMotionState.accelY);
+	UnrealMotionState.Gravity = FVector(NativeMotionState.gravZ, NativeMotionState.gravX, NativeMotionState.gravY);
+	return UnrealMotionState;
+}
+
 FTouchState UJoyShockLibrary::JslGetTouchState(int32 deviceId, bool previous)
 {
 	std::shared_lock<std::shared_timed_mutex> lock(_connectedLock);
@@ -1094,7 +1107,10 @@ void UJoyShockLibrary::JslSetLightColour(int32 deviceId, int32 colour)
 		jc->modifying_lock.Unlock();
 	}
 	else if(jc != nullptr && jc->controller_type == ControllerType::s_ds) {
+		// #JSL4Unreal BEGIN
+		// jc->modifying_lock.lock();
 		jc->modifying_lock.Lock();
+		// #JSL4Unreal END
         jc->led_r = (colour >> 16) & 0xff;
         jc->led_g = (colour >> 8) & 0xff;
         jc->led_b = colour & 0xff;
@@ -1126,7 +1142,10 @@ void UJoyShockLibrary::JslSetRumble(int32 deviceId, int32 smallRumble, int32 big
 		jc->modifying_lock.Unlock();
 	}
     else if (jc != nullptr && jc->controller_type == ControllerType::s_ds) {
+		// #JSL4Unreal BEGIN
+		// jc->modifying_lock.lock();
 		jc->modifying_lock.Lock();
+		// #JSL4Unreal END
         jc->small_rumble = smallRumble;
         jc->big_rumble = bigRumble;
         jc->set_ds5_rumble_light(
@@ -1165,4 +1184,48 @@ void UJoyShockLibrary::JslSetPlayerNumber(int32 deviceId, int32 number)
                 jc->player_number);
 		jc->modifying_lock.Unlock();
 	}
+}
+
+void UJoyShockLibrary::JslSetTriggerEffectFeedback(int32 DeviceId, int position, int strength)
+{
+	std::shared_lock<std::shared_timed_mutex> lock(_connectedLock);
+	JoyShock* jc = GetJoyShockFromHandle(DeviceId);
+	if(jc != nullptr && jc->controller_type == ControllerType::s_ds) {
+		jc->modifying_lock.Lock();
+		set_ds5_trigger_effect_feedback(jc, position, strength);
+		TriggerEffectGenerator::Feedback();
+		/*jc->led_r = (colour >> 16) & 0xff;
+		jc->led_g = (colour >> 8) & 0xff;
+		jc->led_b = colour & 0xff;
+		jc->set_ds5_rumble_light(
+				jc->small_rumble,
+				jc->big_rumble,
+				jc->led_r,
+				jc->led_g,
+				jc->led_b,
+				jc->player_number);*/
+		jc->modifying_lock.Unlock();
+	}	
+}
+
+void UJoyShockLibrary::JslSetTriggerEffectWeapon(int32 DeviceId, int StartPosition, int EndPosition, int Strength)
+{
+}
+
+void UJoyShockLibrary::JslSetTriggerEffectVibration(int32 DeviceId, int Position, int Amplitude, int Frequency)
+{
+}
+
+void UJoyShockLibrary::JslSetTriggerEffectMultiplePositionFeedback(int32 DeviceId, TArray<int> StrengthByZone)
+{
+}
+
+void UJoyShockLibrary::JslSetTriggerEffectSlopeFeedback(int32 DeviceId, int StartPosition, int EndPosition,
+	int StartStrength, int EndStrength)
+{
+}
+
+void UJoyShockLibrary::JslSetTriggerEffectMultiplePositionVibration(int32 DeviceId, int StartPosition, int Frequency,
+	TArray<int> AmplitudeByZone)
+{
 }

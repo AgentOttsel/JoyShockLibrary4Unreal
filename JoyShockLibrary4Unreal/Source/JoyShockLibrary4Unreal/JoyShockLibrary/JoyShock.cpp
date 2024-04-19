@@ -750,7 +750,7 @@ public:
 		printf("Enabling IMU data...\n");
 		if (controller_type == ControllerType::s_ds4)
 		{
-			if (is_usb)
+			if (is_usb) // looks like it should be !is_usb
 			{
 				init_ds4_bt();
 				enable_gyro_ds4_bt(buf, bufLength);

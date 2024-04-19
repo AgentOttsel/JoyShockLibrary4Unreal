@@ -1,5 +1,6 @@
 // JoyShockLibrary.h - Contains declarations of functions
 #pragma once
+#include "TriggerEffectGenerator.h"
 
 #include "JoyShockLibrary.generated.h"
 
@@ -172,6 +173,21 @@ struct JOYSHOCKLIBRARY4UNREAL_API FMotionState // typedef struct MOTION_STATE
 }; // MOTION_STATE;
 
 USTRUCT(BlueprintType)
+struct JOYSHOCKLIBRARY4UNREAL_API FJSL4UMotionState
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(BlueprintReadOnly)
+	FQuat Orientation = FQuat::Identity;
+
+	UPROPERTY(BlueprintReadOnly)
+	FVector Acceleration = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly)
+	FVector Gravity = FVector::ZeroVector;
+};
+
+USTRUCT(BlueprintType)
 struct JOYSHOCKLIBRARY4UNREAL_API FTouchState // typedef struct TOUCH_STATE {
 {
 	GENERATED_BODY()
@@ -295,6 +311,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
 	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API FMotionState JslGetMotionState(int32 deviceId);
+
+	// NEW FUNCTION
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
+	static JOYSHOCKLIBRARY4UNREAL_API FJSL4UMotionState JSL4UGetMotionState(int32 DeviceID);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = JoyShockLibrary)
 	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API FTouchState JslGetTouchState(int32 deviceId, bool previous = false);
@@ -447,4 +467,26 @@ public:
 	// set controller player number indicator (not all controllers have a number indicator which can be set, but that just means nothing will be done when this is called -- no harm)
 	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
 	/*extern "C"*/ static JOYSHOCKLIBRARY4UNREAL_API void JslSetPlayerNumber(int32 deviceId, int32 number);
+
+	// DualSense Adaptive Trigger extensions
+	// UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	// static JOYSHOCKLIBRARY4UNREAL_API void JslSetTriggerEffect(int32 deviceId, TriggerEffectType effect);
+
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	static JOYSHOCKLIBRARY4UNREAL_API void JslSetTriggerEffectFeedback(int32 DeviceId, int position, int strength);
+
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	static JOYSHOCKLIBRARY4UNREAL_API void JslSetTriggerEffectWeapon(int32 DeviceId, int StartPosition, int EndPosition, int Strength);
+
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	static JOYSHOCKLIBRARY4UNREAL_API void JslSetTriggerEffectVibration(int32 DeviceId, int Position, int Amplitude, int Frequency);
+
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	static JOYSHOCKLIBRARY4UNREAL_API void JslSetTriggerEffectMultiplePositionFeedback(int32 DeviceId, TArray<int> StrengthByZone);
+
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	static JOYSHOCKLIBRARY4UNREAL_API void JslSetTriggerEffectSlopeFeedback(int32 DeviceId, int StartPosition, int EndPosition, int StartStrength, int EndStrength);
+
+	UFUNCTION(BlueprintCallable, Category = JoyShockLibrary)
+	static JOYSHOCKLIBRARY4UNREAL_API void JslSetTriggerEffectMultiplePositionVibration(int32 DeviceId, int StartPosition, int Frequency, TArray<int> AmplitudeByZone);
 };
