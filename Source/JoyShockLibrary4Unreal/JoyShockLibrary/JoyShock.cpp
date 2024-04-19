@@ -305,7 +305,7 @@ public:
 		this->serial = _wcsdup(dev->serial_number);
 		this->intHandle = uniqueHandle;
 
-		//printf("Found device %c: %ls %s\n", L_OR_R(this->left_right), this->serial, dev->path);
+		//UE_LOG(LogJoyShockLibrary, Log, TEXT("Found device %c: %ls %s\n"), L_OR_R(this->left_right), this->serial, dev->path);
 		this->handle = inHandle;
 
 		if (this->controller_type == ControllerType::s_ds4) {
@@ -636,7 +636,7 @@ public:
 		}
 		else {
 			//FormJoy::myform1->textBox_lstick_ucal->Text = L"L Stick User:\r\nNo calibration";
-			//printf("no user Calibration data for left stick.\n");
+			//UE_LOG(LogJoyShockLibrary, Log, TEXT("no user Calibration data for left stick.\n"));
 		}
 
 		if ((user_stick_cal[0xB] | user_stick_cal[0xC] << 8) == 0xA1B2) {
@@ -651,7 +651,7 @@ public:
 		}
 		else {
 			//FormJoy::myform1->textBox_rstick_ucal->Text = L"R Stick User:\r\nNo calibration";
-			//printf("no user Calibration data for right stick.\n");
+			//UE_LOG(LogJoyShockLibrary, Log, TEXT("no user Calibration data for right stick.\n"));
 		}
 
 		// get gyro / accelerometer calibration data:
@@ -673,7 +673,7 @@ public:
 
 		// user calibration:
 		if ((user_sensor_cal[0x0] | user_sensor_cal[0x1] << 8) == 0xA1B2) {
-			//printf("User calibration available\n");
+			//UE_LOG(LogJoyShockLibrary, Log, TEXT("User calibration available\n"));
 			//if (true) {
 			//FormJoy::myform1->textBox_6axis_ucal->Text = L"6-Axis User (XYZ):\r\nAcc:  ";
 			//for (int i = 0; i < 0xC; i = i + 6) {
@@ -731,7 +731,7 @@ public:
 			(((int)device_colours[10]) << 8) +
 			(((int)device_colours[11]));
 
-		printf("Body: %#08x; Buttons: %#08x; Left Grip: %#08x; Right Grip: %#08x;\n",
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Body: %#08x; Buttons: %#08x; Left Grip: %#08x; Right Grip: %#08x;\n"),
 			body_colour,
 			button_colour,
 			left_grip_colour,
@@ -747,10 +747,10 @@ public:
 		memset(buf, 0, bufLength);
 
 		// Enable IMU data
-		printf("Enabling IMU data...\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Enabling IMU data...\n"));
 		if (controller_type == ControllerType::s_ds4)
 		{
-			if (is_usb) // looks like it should be !is_usb
+			if (is_usb)
 			{
 				init_ds4_bt();
 				enable_gyro_ds4_bt(buf, bufLength);
@@ -776,68 +776,68 @@ public:
 		hid_set_nonblocking(this->handle, 0);
 
 		//Get MAC Left
-		printf("Getting MAC...\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Getting MAC...\n"));
 		memset(buf, 0x00, 0x40);
 		buf[0] = 0x80;
 		buf[1] = 0x01;
 		hid_exchange(this->handle, buf, 0x2);
 
 		//if (buf[2] == 0x3) {
-		//	printf("%s disconnected!\n", this->name.c_str());
+		//	UE_LOG(LogJoyShockLibrary, Log, TEXT("%s disconnected!\n", this->name.c_str()));
 		//}
 		//else {
-		//	printf("Found %s, MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", this->name.c_str(), buf[9], buf[8], buf[7], buf[6], buf[5], buf[4]);
+		//	UE_LOG(LogJoyShockLibrary, Log, TEXT("Found %s, MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", this->name.c_str(), buf[9], buf[8], buf[7], buf[6], buf[5], buf[4]));
 		//}
 
 		// set non-blocking:
 		//hid_set_nonblocking(jc->handle, 1);
 
 		// Do handshaking
-		printf("Doing handshake...\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Doing handshake...\n"));
 		memset(buf, 0x00, 0x40);
 		buf[0] = 0x80;
 		buf[1] = 0x02;
 		hid_exchange(this->handle, buf, 0x2);
 
 		// Switch baudrate to 3Mbit
-		printf("Switching baudrate...\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Switching baudrate...\n"));
 		memset(buf, 0x00, 0x40);
 		buf[0] = 0x80;
 		buf[1] = 0x03;
 		hid_exchange(this->handle, buf, 0x2);
 
 		//Do handshaking again at new baudrate so the firmware pulls pin 3 low?
-		printf("Doing handshake...\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Doing handshake...\n"));
 		memset(buf, 0x00, 0x40);
 		buf[0] = 0x80;
 		buf[1] = 0x02;
 		hid_exchange(this->handle, buf, 0x2);
 
 		//Only talk HID from now on
-		printf("Only talk HID...\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Only talk HID...\n"));
 		memset(buf, 0x00, 0x40);
 		buf[0] = 0x80;
 		buf[1] = 0x04;
 		hid_exchange(this->handle, buf, 0x2);
 
 		// Enable vibration
-		printf("Enabling vibration...\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Enabling vibration...\n"));
 		memset(buf, 0x00, 0x400);
 		buf[0] = 0x01; // Enabled
 		send_subcommand(0x1, 0x48, buf, 1);
 
 		enable_IMU(buf, 0x400);
 
-		printf("Getting calibration data...\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Getting calibration data...\n"));
 		bool result = get_switch_controller_info();
 
 		if (result)
 		{
-			printf("Successfully initialized %s!\n", this->name.c_str());
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("Successfully initialized %s!\n"), *FString(StringCast<TCHAR>(this->name.c_str()).Get()));
 		}
 		else
 		{
-			printf("Could not initialise %s! Will try again later.\n", this->name.c_str());
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("Could not initialise %s! Will try again later.\n"), *FString(StringCast<TCHAR>(this->name.c_str()).Get()));
 		}
 		return result;
 	}
@@ -846,7 +846,7 @@ public:
 		bool result = true;
 		unsigned char buf[0x40];
 		memset(buf, 0, 0x40);
-		printf("Initialising Bluetooth connection...\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Initialising Bluetooth connection...\n"));
 
 		// set blocking to ensure command is recieved:
 		hid_set_nonblocking(this->handle, 0);
@@ -860,9 +860,9 @@ public:
 		{
 			if (hid_read_timeout(this->handle, buf, 0x40, 200) && buf[0] == 0x81)
 			{
-				//printf("%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+				//UE_LOG(LogJoyShockLibrary, Log, TEXT("%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
 				//	buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[10]);
-				printf("Attempting USB connection\n");
+				UE_LOG(LogJoyShockLibrary, Log, TEXT("Attempting USB connection\n"));
 
 				// it's usb!
 				is_usb = true;
@@ -872,16 +872,16 @@ public:
 
 				break;
 			}
-			//printf("%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			//UE_LOG(LogJoyShockLibrary, Log, TEXT("%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n"),
 			//	buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[10]);
-			printf("Not a USB response...\n");
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("Not a USB response...\n"));
 		}
 		memset(buf, 0, 0x40);
 		//if (hid_exchange(this->handle, buf, 2))
 		//{
-		//	printf("%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+		//	UE_LOG(LogJoyShockLibrary, Log, TEXT("%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n"),
 		//		buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[10]);
-		//	printf("Attempting USB connection\n");
+		//	UE_LOG(LogJoyShockLibrary, Log, TEXT("Attempting USB connection\n"));
 		//	// it's usb!
 		//	is_usb = true;
 		//
@@ -891,11 +891,11 @@ public:
 		buf[1] = 0x00;
 
 		// Enable vibration
-		printf("Enabling vibration...\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Enabling vibration...\n"));
 		buf[0] = 0x01; // Enabled
 		send_subcommand(0x1, 0x48, buf, 1);
 
-		//printf("Set vibration\n");
+		//UE_LOG(LogJoyShockLibrary, Log, TEXT("Set vibration\n"));
 
 		// Enable IMU data
 		enable_IMU(buf, 0x40);
@@ -908,21 +908,21 @@ public:
 		// x23	MCU update input report ?
 		// 30	NPad standard mode. Pushes current state @60Hz. Default in SDK if arg is not in the list
 		// 31	NFC mode. Pushes large packets @60Hz
-		printf("Set input report mode to 0x30...\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Set input report mode to 0x30...\n"));
 		buf[0] = 0x30;
 		send_subcommand(0x01, 0x03, buf, 1);
 
 		// @CTCaer
 
 		// get calibration data:
-		printf("Getting calibration data...\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("Getting calibration data...\n"));
 		result = get_switch_controller_info();
 
 		return result;
 	}
 
 	void init_ds4_bt() {
-		printf("initialise, set colour\n");
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("initialise, set colour\n"));
 		unsigned char buf[78];
 		memset(buf, 0, 78);
 
