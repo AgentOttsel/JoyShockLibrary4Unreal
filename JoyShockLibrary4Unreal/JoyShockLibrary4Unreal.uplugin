@@ -1,0 +1,29 @@
+﻿{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "JoyShockLibrary4Unreal",
+	"Description": "Unreal Wrapper for JibbSmart's JoyShockLibrary",
+	"Category": "Other",
+	"CreatedBy": "AgentOttsel, JibbSmart",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "JoyShockLibrary4Unreal",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "HIDUE",
+			"Enabled": true
+		}
+	]
+}
