@@ -1,10 +1,10 @@
-#pragma once
+#include "InputHelpers.h"
 #include "JoyShockLibrary.h"
-#include "JoyShock.cpp"
+#include "JoyShock.h"
 
-#include <cmath>
+// #include <cmath>
 
-bool handle_input(JoyShock *jc, uint8_t *packet, int len, bool &hasIMU) {
+bool handle_input(JoyShock* jc, uint8_t* packet, int32 len, bool &hasIMU) {
 	hasIMU = true;
 	if (packet[0] == 0) return false; // ignore non-responses
 									  // remember last input
@@ -374,11 +374,11 @@ bool handle_input(JoyShock *jc, uint8_t *packet, int len, bool &hasIMU) {
 			//printf("%d, %d\n",
 			//	jc->stick_cal_x_l,
 			//	jc->stick_cal_y_l);
-			uint16_t stick_x = stick_data[0] | ((stick_data[1] & 0xF) << 8);
-			uint16_t stick_y = (stick_data[1] >> 4) | (stick_data[2] << 4);
+			uint16_t StickX = stick_data[0] | ((stick_data[1] & 0xF) << 8);
+			uint16_t StickY = (stick_data[1] >> 4) | (stick_data[2] << 4);
 			jc->CalcAnalogStick2(jc->simple_state.stickLX, jc->simple_state.stickLY,
-				stick_x,
-				stick_y,
+				StickX,
+				StickY,
 				jc->stick_cal_x_l,
 				jc->stick_cal_y_l);
 			stick_data += 3;

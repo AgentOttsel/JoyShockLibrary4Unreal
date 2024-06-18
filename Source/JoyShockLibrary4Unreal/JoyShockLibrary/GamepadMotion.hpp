@@ -6,7 +6,11 @@
 
 #define _USE_MATH_DEFINES
 #include <math.h>
-#include <algorithm> // std::min, std::max and std::clamp
+#include <algorithm>
+
+// TEMP DEBUG {
+#include "Math/MathFwd.h"
+// }
 
 // You don't need to look at these. These will just be used internally by the GamepadMotion class declared below.
 // You can ignore anything in namespace GamepadMotionHelpers.
@@ -21,7 +25,7 @@ namespace GamepadMotionHelpers
 		float Y;
 		float Z;
 		float AccelMagnitude;
-		int NumSamples;
+		int32 NumSamples;
 	};
 
 	struct Quat
@@ -590,7 +594,7 @@ namespace GamepadMotionHelpers
 			//	absoluteAccel.x, absoluteAccel.y, absoluteAccel.z);
 			const float smoothFactor = ShortSteadinessHalfTime <= 0.f ? 0.f : exp2f(-deltaTime / ShortSteadinessHalfTime);
 			Shakiness *= smoothFactor;
-			Shakiness = std::max(Shakiness, (accel - SmoothAccel).Length());
+			Shakiness = FMath::Max(Shakiness, (accel - SmoothAccel).Length());
 			SmoothAccel = accel.Lerp(SmoothAccel, smoothFactor);
 
 			//printf("Shakiness: %.4f\n", Shakiness);
@@ -604,20 +608,20 @@ namespace GamepadMotionHelpers
 			float gravCorrectionSpeed;
 			if (gravityCorrectionShakinessMinThreshold < gravityCorrectionShakinessMaxThreshold)
 			{
-				gravCorrectionSpeed = gravityCorrectionStillSpeed + (gravityCorrectionShakySpeed - gravityCorrectionStillSpeed) * std::clamp((Shakiness - gravityCorrectionShakinessMinThreshold) / (gravityCorrectionShakinessMaxThreshold - gravityCorrectionShakinessMinThreshold), 0.f, 1.f);
+				gravCorrectionSpeed = gravityCorrectionStillSpeed + (gravityCorrectionShakySpeed - gravityCorrectionStillSpeed) * FMath::Clamp((Shakiness - gravityCorrectionShakinessMinThreshold) / (gravityCorrectionShakinessMaxThreshold - gravityCorrectionShakinessMinThreshold), 0.f, 1.f);
 			}
 			else
 			{
 				gravCorrectionSpeed = Shakiness < gravityCorrectionShakinessMaxThreshold ? gravityCorrectionStillSpeed : gravityCorrectionShakySpeed;
 			}
 			// we also limit it to be no faster than a given proportion of the gyro rate, or the minimum gravity correction speed
-			const float gyroGravCorrectionLimit = std::max(angleSpeed * gravityCorrectionGyroFactor, gravityCorrectionMinimumSpeed);
+			const float gyroGravCorrectionLimit = FMath::Max(angleSpeed * gravityCorrectionGyroFactor, gravityCorrectionMinimumSpeed);
 			if (gravCorrectionSpeed > gyroGravCorrectionLimit)
 			{
 				float closeEnoughFactor;
 				if (gravityCorrectionGyroMinThreshold < gravityCorrectionGyroMaxThreshold)
 				{
-					closeEnoughFactor = std::clamp((gravToAccel.Length() - gravityCorrectionGyroMinThreshold) / (gravityCorrectionGyroMaxThreshold - gravityCorrectionGyroMinThreshold), 0.f, 1.f);
+					closeEnoughFactor = FMath::Clamp((gravToAccel.Length() - gravityCorrectionGyroMinThreshold) / (gravityCorrectionGyroMaxThreshold - gravityCorrectionGyroMinThreshold), 0.f, 1.f);
 				}
 				else
 				{
@@ -636,7 +640,7 @@ namespace GamepadMotionHelpers
 			}
 
 			const Vec gravityDirection = Grav.Normalized() * Quaternion.Inverse(); // absolute gravity direction
-			const float errorAngle = acosf(std::clamp(Vec(0.0f, -1.0f, 0.0f).Dot(gravityDirection), -1.f, 1.f));
+			const float errorAngle = acosf(FMath::Clamp(Vec(0.0f, -1.0f, 0.0f).Dot(gravityDirection), -1.f, 1.f));
 			const Vec flattened = Vec(0.0f, -1.0f, 0.0f).Cross(gravityDirection);
 			Quat correctionQuat = AngleAxis(errorAngle, flattened.x, flattened.y, flattened.z);
 			Quaternion = Quaternion * correctionQuat;
@@ -796,7 +800,7 @@ namespace GamepadMotionHelpers
 		}
 		else
 		{
-			RecalibrateThreshold = std::min(RecalibrateThreshold + stillnessErrorClimbRate * deltaTime, maxStillnessError);
+			RecalibrateThreshold = FMath::Min(RecalibrateThreshold + stillnessErrorClimbRate * deltaTime, maxStillnessError);
 			return false;
 		}
 
@@ -815,15 +819,15 @@ namespace GamepadMotionHelpers
 					printf("Still!\n");
 				}/**/
 
-				TimeSteadyStillness = std::min(TimeSteadyStillness + deltaTime, stillnessCalibrationEaseInTime);
+				TimeSteadyStillness = FMath::Min(TimeSteadyStillness + deltaTime, stillnessCalibrationEaseInTime);
 				const float calibrationEaseIn = stillnessCalibrationEaseInTime <= 0.f ? 1.f : TimeSteadyStillness / stillnessCalibrationEaseInTime;
 
 				const Vec calibratedGyro = MinMaxWindow.GetMidGyro();
 
-				const Vec oldGyroBias = Vec(CalibrationData->X, CalibrationData->Y, CalibrationData->Z) / std::max((float)CalibrationData->NumSamples, 1.f);
+				const Vec oldGyroBias = Vec(CalibrationData->X, CalibrationData->Y, CalibrationData->Z) / FMath::Max((float)CalibrationData->NumSamples, 1.f);
 				const float stillnessLerpFactor = stillnessCalibrationHalfTime <= 0.f ? 0.f : exp2f(-calibrationEaseIn * deltaTime / stillnessCalibrationHalfTime);
 				Vec newGyroBias = calibratedGyro.Lerp(oldGyroBias, stillnessLerpFactor);
-				Confidence = std::min(Confidence + deltaTime * stillnessConfidenceRate, 1.f);
+				Confidence = FMath::Min(Confidence + deltaTime * stillnessConfidenceRate, 1.f);
 				isSteady = true;
 
 				if (doSensorFusion)
@@ -834,7 +838,7 @@ namespace GamepadMotionHelpers
 					const float crossLength = angularVelocity.Length();
 					if (crossLength > 0.f)
 					{
-						const float thisDotPrev = std::clamp(thisNormal.Dot(previousNormal), -1.f, 1.f);
+						const float thisDotPrev = FMath::Clamp(thisNormal.Dot(previousNormal), -1.f, 1.f);
 						const float angleChange = acosf(thisDotPrev) * 180.0f / (float)M_PI;
 						const float anglePerSecond = angleChange / MinMaxWindow.TimeSampled;
 						angularVelocity *= anglePerSecond / crossLength;
@@ -867,7 +871,7 @@ namespace GamepadMotionHelpers
 			}
 			else
 			{
-				RecalibrateThreshold = std::min(RecalibrateThreshold + stillnessErrorClimbRate * deltaTime, maxStillnessError);
+				RecalibrateThreshold = FMath::Min(RecalibrateThreshold + stillnessErrorClimbRate * deltaTime, maxStillnessError);
 			}
 		}
 		else if (TimeSteadyStillness > 0.f)
@@ -881,7 +885,7 @@ namespace GamepadMotionHelpers
 		}
 		else
 		{
-			RecalibrateThreshold = std::min(RecalibrateThreshold + stillnessErrorClimbRate * deltaTime, maxStillnessError);
+			RecalibrateThreshold = FMath::Min(RecalibrateThreshold + stillnessErrorClimbRate * deltaTime, maxStillnessError);
 			MinMaxWindow.Reset(0.f);
 		}
 
@@ -963,7 +967,7 @@ namespace GamepadMotionHelpers
 		const float crossLength = angularVelocity.Length();
 		if (crossLength > 0.f)
 		{
-			const float thisDotPrev = std::clamp(thisNormal.Dot(previousNormal), -1.f, 1.f);
+			const float thisDotPrev = FMath::Clamp(thisNormal.Dot(previousNormal), -1.f, 1.f);
 			const float angleChange = acosf(thisDotPrev) * 180.0f / (float)M_PI;
 			const float anglePerSecond = angleChange / deltaTime;
 			angularVelocity *= anglePerSecond / crossLength;
@@ -987,13 +991,13 @@ namespace GamepadMotionHelpers
 				printf("Steady!\n");
 			}/**/
 
-			TimeSteadySensorFusion = std::min(TimeSteadySensorFusion + deltaTime, sensorFusionCalibrationEaseInTime);
+			TimeSteadySensorFusion = FMath::Min(TimeSteadySensorFusion + deltaTime, sensorFusionCalibrationEaseInTime);
 			const float calibrationEaseIn = sensorFusionCalibrationEaseInTime <= 0.f ? 1.f : TimeSteadySensorFusion / sensorFusionCalibrationEaseInTime;
-			const Vec oldGyroBias = Vec(CalibrationData->X, CalibrationData->Y, CalibrationData->Z) / std::max((float)CalibrationData->NumSamples, 1.f);
+			const Vec oldGyroBias = Vec(CalibrationData->X, CalibrationData->Y, CalibrationData->Z) / FMath::Max((float)CalibrationData->NumSamples, 1.f);
 			// recalibrate over time proportional to the difference between the calculated bias and the current assumed bias
 			const float sensorFusionLerpFactor = sensorFusionCalibrationHalfTime <= 0.f ? 0.f : exp2f(-calibrationEaseIn * deltaTime / sensorFusionCalibrationHalfTime);
 			Vec newGyroBias = (SmoothedAngularVelocityGyro - SmoothedAngularVelocityAccel).Lerp(oldGyroBias, sensorFusionLerpFactor);
-			Confidence = std::min(Confidence + deltaTime * sensorFusionConfidenceRate, 1.f);
+			Confidence = FMath::Min(Confidence + deltaTime * sensorFusionConfidenceRate, 1.f);
 			isSteady = true;
 			// don't change bias in axes that can't be affected by the gravity direction
 			Vec axisCalibrationStrength = thisNormal.Abs();
@@ -1171,7 +1175,7 @@ inline void GamepadMotion::CalculatePlayerSpaceGyro(float& x, float& y, const fl
 	// take gravity into account without taking on any error from gravity. Explained in depth at http://gyrowiki.jibbsmart.com/blog:player-space-gyro-and-alternatives-explained#toc7
 	const float worldYaw = -(gravY * gyroY + gravZ * gyroZ);
 	const float worldYawSign = worldYaw < 0.f ? -1.f : 1.f;
-	y = worldYawSign * std::min(std::abs(worldYaw) * yawRelaxFactor, sqrtf(gyroY * gyroY + gyroZ * gyroZ));
+	y = worldYawSign * FMath::Min(FMath::Abs(worldYaw) * yawRelaxFactor, sqrtf(gyroY * gyroY + gyroZ * gyroZ));
 	x = gyroX;
 }
 
@@ -1197,9 +1201,9 @@ inline void GamepadMotion::CalculateWorldSpaceGyro(float& x, float& y, const flo
 		const float lengthReciprocal = 1.f / pitchAxisLength;
 		pitchAxis *= lengthReciprocal;
 
-		const float flatness = std::abs(gravY);
-		const float upness = std::abs(gravZ);
-		const float sideReduction = sideReductionThreshold <= 0.f ? 1.f : std::clamp((std::max(flatness, upness) - sideReductionThreshold) / sideReductionThreshold, 0.f, 1.f);
+		const float flatness = FMath::Abs(gravY);
+		const float upness = FMath::Abs(gravZ);
+		const float sideReduction = sideReductionThreshold <= 0.f ? 1.f : FMath::Clamp((FMath::Max(flatness, upness) - sideReductionThreshold) / sideReductionThreshold, 0.f, 1.f);
 
 		x = sideReduction * pitchAxis.Dot(GamepadMotionHelpers::Vec(gyroX, gyroY, gyroZ));
 	}
