@@ -2,23 +2,67 @@
 
 #include "JoyShockLibrary4Unreal.h"
 
+#include "JoyShockInterface.h"
+
 #define LOCTEXT_NAMESPACE "FJoyShockLibrary4UnrealModule"
+
+#if PLATFORM_WINDOWS
+bool FWindowsDeviceChangeMessageHandler::ProcessMessage(HWND hwnd, uint32 msg, WPARAM wParam, LPARAM lParam,
+	int32& OutResult)
+{
+	if (msg == WM_DEVICECHANGE)
+	{
+		// UE_LOG(LogTemp, Log, TEXT(">>>>>CONNECTING DEVICES TO JoyShockLibrary"));
+		UJoyShockLibrary::JslConnectDevices();
+	}
+
+	return false;
+}
+#endif
 
 void FJoyShockLibrary4UnrealModule::StartupModule()
 {
-	// This code will execute after your module is loaded into memory; the exact timing is specified in the .uplugin file per-module
+	IInputDeviceModule::StartupModule();
+
+	if (FSlateApplication::IsInitialized())
+	{
+		TSharedPtr<GenericApplication> Application = FSlateApplication::Get().GetPlatformApplication();
+
+		if (Application.IsValid())
+		{
+#if PLATFORM_WINDOWS
+			FWindowsApplication* WindowsApplication = static_cast<FWindowsApplication*>(Application.Get());
+			WindowsApplication->AddMessageHandler(WindowsDeviceChangeMessageHandler);
+#endif
+			// TODO: Add Linux and macOS support
+		}
+	}
 }
 
 void FJoyShockLibrary4UnrealModule::ShutdownModule()
 {
-	// This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
-	// we call this function before unloading the module.
+	// Application is already invalid at this point, so there's no message handler to remove.
+	/*if (FSlateApplication::IsInitialized())
+	{
+		UE_LOG(LogTemp, Log, TEXT(">>>>>SHUTTING DOWN JoyShockLibrary MODULE"));
+		if (TSharedPtr<GenericApplication> Application = FSlateApplication::Get().GetPlatformApplication())
+		{
+			if (Application.IsValid())
+			{
+#if PLATFORM_WINDOWS
+				FWindowsApplication* WindowsApplication = static_cast<FWindowsApplication*>(Application.Get());
+				WindowsApplication->RemoveMessageHandler(WindowsDeviceChangeMessageHandler);
+#endif
+			}
+		}
+	}*/
+
+	IInputDeviceModule::ShutdownModule();
 }
 
-TSharedPtr<IInputDevice> FJoyShockLibrary4UnrealModule::CreateInputDevice(
-	const TSharedRef<FGenericApplicationMessageHandler>& InMessageHandler)
+TSharedPtr<IInputDevice> FJoyShockLibrary4UnrealModule::CreateInputDevice(const TSharedRef<FGenericApplicationMessageHandler>& InMessageHandler)
 {
-	return nullptr;
+	return FJoyShockInterface::Create(InMessageHandler);
 }
 
 #undef LOCTEXT_NAMESPACE

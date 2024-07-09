@@ -26,7 +26,9 @@ public class JoyShockLibrary4Unreal : ModuleRules
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"ApplicationCore",
 				"Core",
+				"DeveloperSettings",
 				"InputDevice",
 				// ... add other public dependencies that you statically link with here ...
 			}
@@ -36,11 +38,13 @@ public class JoyShockLibrary4Unreal : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"ApplicationCore",
 				"CoreUObject",
 				"Engine",
+				"HIDUE",
+				"InputCore",
 				"Slate",
 				"SlateCore",
-				"HIDUE",
 				// ... add private dependencies that you statically link with here ...	
 			}
 		);
