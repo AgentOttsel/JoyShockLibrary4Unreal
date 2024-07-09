@@ -4,7 +4,7 @@
 	"VersionName": "1.0",
 	"FriendlyName": "JoyShockLibrary4Unreal",
 	"Description": "Unreal Wrapper for JibbSmart's JoyShockLibrary",
-	"Category": "Other",
+	"Category" : "Input Devices",
 	"CreatedBy": "AgentOttsel, JibbSmart",
 	"CreatedByURL": "",
 	"DocsURL": "",

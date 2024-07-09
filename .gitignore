@@ -7,6 +7,11 @@
 *.tlog
 intermediate/
 
+Binaries
+DerivedDataCache
+Intermediate
+Saved
+
 # User-specific files
 #*.suo
 #*.user
