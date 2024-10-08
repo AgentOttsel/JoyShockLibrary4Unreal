@@ -133,6 +133,12 @@ namespace GamepadMotionHelpers
 
 	struct Motion
 	{
+		// TEMP DEBUG BEGIN
+		// static inline FVector Flattened;
+		// TEMP DEBUG END
+		
+		Quat RawQuaternion; // Temporary workaround until Gravity correction is fixed
+
 		Quat Quaternion;
 		Vec Accel;
 		Vec Grav;
@@ -244,6 +250,7 @@ public:
 	void GetGravity(float& x, float& y, float& z);
 	void GetProcessedAcceleration(float& x, float& y, float& z);
 	void GetOrientation(float& w, float& x, float& y, float& z);
+	void GetRawOrientation(float& w, float& x, float& y, float& z);
 	void GetPlayerSpaceGyro(float& x, float& y, const float yawRelaxFactor = 1.41f);
 	static void CalculatePlayerSpaceGyro(float& x, float& y, const float gyroX, const float gyroY, const float gyroZ, const float gravX, const float gravY, const float gravZ, const float yawRelaxFactor = 1.41f);
 	void GetWorldSpaceGyro(float& x, float& y, const float sideReductionThreshold = 0.125f);
@@ -546,6 +553,7 @@ namespace GamepadMotionHelpers
 
 	inline void Motion::Reset()
 	{
+		RawQuaternion.Set(1.f, 0.f, 0.f, 0.f);
 		Quaternion.Set(1.f, 0.f, 0.f, 0.f);
 		Accel.Set(0.f, 0.f, 0.f);
 		Grav.Set(0.f, 0.f, 0.f);
@@ -580,7 +588,9 @@ namespace GamepadMotionHelpers
 
 		// rotate
 		Quat rotation = AngleAxis(angle, axis.x, axis.y, axis.z);
+		
 		Quaternion *= rotation; // do it this way because it's a local rotation, not global
+		RawQuaternion *= rotation; // RawQuaternion is like Quaternion, except Gravity Correction isn't applied to it.
 
 		//printf("Quat: %.4f %.4f %.4f %.4f\n",
 		//	Quaternion.w, Quaternion.x, Quaternion.y, Quaternion.z);
@@ -643,7 +653,19 @@ namespace GamepadMotionHelpers
 			const float errorAngle = acosf(FMath::Clamp(Vec(0.0f, -1.0f, 0.0f).Dot(gravityDirection), -1.f, 1.f));
 			const Vec flattened = Vec(0.0f, -1.0f, 0.0f).Cross(gravityDirection);
 			Quat correctionQuat = AngleAxis(errorAngle, flattened.x, flattened.y, flattened.z);
+			
 			Quaternion = Quaternion * correctionQuat;
+
+			// TEST BEGIN
+			/*FlattenedX = -flattened.z;
+			FlattenedY = flattened.x;
+			FlattenedZ = flattened.y;
+			Flattened = FVector(-flattened.z, flattened.x, flattened.y);
+			FWorldContext* WorldContext = GEngine->GetWorldContextFromGameViewport(GEngine->GameViewport);
+			UWorld* World = WorldContext->World();*/
+			// UKismetSystemLibrary::DrawDebugArrow(World, Origin, Origin + Flattened * 200.0f, 2.0f, FColor::Red);
+			// Quaternion = correctionQuat;
+			// TEST END
 			
 			Accel = accel + Grav;
 		}
@@ -653,6 +675,7 @@ namespace GamepadMotionHelpers
 			Accel = Grav;
 		}
 		Quaternion.Normalize();
+		RawQuaternion.Normalize();
 	}
 
 	inline void Motion::SetSettings(GamepadMotionSettings* settings)
@@ -1163,6 +1186,14 @@ inline void GamepadMotion::GetOrientation(float& w, float& x, float& y, float& z
 	x = Motion.Quaternion.x;
 	y = Motion.Quaternion.y;
 	z = Motion.Quaternion.z;
+}
+
+inline void GamepadMotion::GetRawOrientation(float& w, float& x, float& y, float& z)
+{
+	w = Motion.RawQuaternion.w;
+	x = Motion.RawQuaternion.x;
+	y = Motion.RawQuaternion.y;
+	z = Motion.RawQuaternion.z;
 }
 
 inline void GamepadMotion::GetPlayerSpaceGyro(float& x, float& y, const float yawRelaxFactor)

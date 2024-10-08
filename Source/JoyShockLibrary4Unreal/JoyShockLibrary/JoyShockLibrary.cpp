@@ -672,13 +672,39 @@ FMotionState UJoyShockLibrary::JslGetMotionState(int32 deviceId)
 
 FJSL4UMotionState UJoyShockLibrary::JSL4UGetMotionState(int32 DeviceID)
 {
+	/* TEMP DEBUG
+	FVector Origin = FVector(280.0, 0.0f, 0.0f);
+	FWorldContext* WorldContext = GEngine->GetWorldContextFromGameViewport(GEngine->GameViewport);
+	UWorld* World = WorldContext->World();
+	FVector TempFlattened = GamepadMotionHelpers::Motion::Flattened;
+	// FVector TempFlattened = FVector(GamepadMotionHelpers::Motion::FlattenedX, GamepadMotionHelpers::Motion::FlattenedY, GamepadMotionHelpers::Motion::FlattenedZ);
+	UKismetSystemLibrary::DrawDebugArrow(World, Origin, Origin + TempFlattened * 200.0f, 2.0f, FColor::Red);
+	TEMP DEBUG */
+	
 	FMotionState NativeMotionState = JslGetMotionState(DeviceID);
-	FJSL4UMotionState UnrealMotionState = {};
-	UnrealMotionState.Orientation = FQuat(-NativeMotionState.quatZ, NativeMotionState.quatX, -NativeMotionState.quatY, NativeMotionState.quatW);
+	FJSL4UMotionState UnrealMotionState;
 
-	// TODO: Check handedness and sign
-	UnrealMotionState.Acceleration = FVector(NativeMotionState.accelZ, NativeMotionState.accelX, NativeMotionState.accelY);
-	UnrealMotionState.Gravity = FVector(NativeMotionState.gravZ, NativeMotionState.gravX, NativeMotionState.gravY);
+
+	// Works with no gravity correction
+	UnrealMotionState.Orientation = FQuat(NativeMotionState.rawQuatZ, -NativeMotionState.rawQuatX, -NativeMotionState.rawQuatY, NativeMotionState.rawQuatW);
+	
+	// Restore one of the two below once the gravity correction bug has been fixed in GamepadMotion.hpp
+	// UnrealMotionState.Orientation = FQuat(-NativeMotionState.quatZ, NativeMotionState.quatX, -NativeMotionState.quatY, NativeMotionState.quatW);
+	// UnrealMotionState.Orientation = FQuat(NativeMotionState.quatZ, -NativeMotionState.quatX, NativeMotionState.quatY, -NativeMotionState.quatW);
+
+	UnrealMotionState.Acceleration = FVector(NativeMotionState.accelZ, NativeMotionState.accelX, -NativeMotionState.accelY);
+	UnrealMotionState.Gravity = FVector(-NativeMotionState.gravZ, NativeMotionState.gravX, NativeMotionState.gravY);
+	return UnrealMotionState;
+}
+
+FJSL4UMotionState UJoyShockLibrary::JSL4UGetRawMotionState(int32 DeviceID)
+{
+	FMotionState NativeMotionState = JslGetMotionState(DeviceID);
+	FJSL4UMotionState UnrealMotionState;
+	UnrealMotionState.Orientation = FQuat(NativeMotionState.quatX, NativeMotionState.quatY, -NativeMotionState.quatZ, NativeMotionState.quatW);
+
+	UnrealMotionState.Acceleration = FVector(NativeMotionState.accelX, NativeMotionState.accelY, NativeMotionState.accelZ);
+	UnrealMotionState.Gravity = FVector(NativeMotionState.gravX, NativeMotionState.gravY, NativeMotionState.gravZ);
 	return UnrealMotionState;
 }
 

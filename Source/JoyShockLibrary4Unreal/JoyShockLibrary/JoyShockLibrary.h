@@ -199,6 +199,18 @@ struct JOYSHOCKLIBRARY4UNREAL_API FMotionState // typedef struct MOTION_STATE
 	float quatZ = 0.f;
 	
 	UPROPERTY(BlueprintReadOnly)
+	float rawQuatW = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
+	float rawQuatX = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
+	float rawQuatY = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
+	float rawQuatZ = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
 	float accelX = 0.f;
 	
 	UPROPERTY(BlueprintReadOnly)

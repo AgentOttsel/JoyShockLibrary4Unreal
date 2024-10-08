@@ -213,6 +213,7 @@ FMotionState JoyShock::get_motion_state()
 	modifying_lock.Lock();
 	motion.GetProcessedAcceleration(motionState.accelX, motionState.accelY, motionState.accelZ);
 	motion.GetOrientation(motionState.quatW, motionState.quatX, motionState.quatY, motionState.quatZ);
+	motion.GetRawOrientation(motionState.rawQuatW, motionState.rawQuatX, motionState.rawQuatY, motionState.rawQuatZ);
 	motion.GetGravity(motionState.gravX, motionState.gravY, motionState.gravZ);
 	modifying_lock.Unlock();
 	return motionState;
