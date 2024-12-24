@@ -44,10 +44,12 @@ For buttons that are exclusive to JoyShock inputs, new input events have been ad
 
 ## Blueprint nodes
 
-All original JoyShockLibrary functions are still here and exposed to Blueprints. You can quickly find them by searching for the JSL prefix.
+All original JoyShockLibrary functions are still here and exposed to Blueprints. You can quickly find them by searching for the JSL prefix. 
+
 ![JSL Functions](https://github.com/user-attachments/assets/08010581-64ec-45c8-9e79-9fc8a2315349)
 
 Additionally, new functions have been created and exposed to Blueprints with the JSL4U prefix:
+
 ![JSL4U Functions](https://github.com/user-attachments/assets/1d59f8cd-2888-4ab3-b1ca-2a29b00f3f6b)
 
 JSL4U functions favour Unreal Engine's types and standards, so instead of returning, for example, 3 floats for an acceleration vector, they return an FVector. Additionally, vectors and quaternions were updated to be in Left-handed Z-up, as opposed to Right-handed Y-up.
