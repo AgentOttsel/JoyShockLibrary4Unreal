@@ -166,67 +166,30 @@ private:
 	
 	
 	const TArray<TTuple<int32, FName>> JoyShockMaskMappings = {
-		/* [0] = */{JSMASK_UP, FGamepadKeyNames::DPadUp},
-		/* [1] = */{JSMASK_DOWN, FGamepadKeyNames::DPadDown},
-		/* [2] = */{JSMASK_LEFT, FGamepadKeyNames::DPadLeft},
-		/* [3] = */{JSMASK_RIGHT, FGamepadKeyNames::DPadRight},
-		/* [4] = */{JSMASK_PLUS, FGamepadKeyNames::SpecialRight},
-		/* [5] = */{JSMASK_OPTIONS, FGamepadKeyNames::SpecialRight},
-		/* [6] = */{JSMASK_MINUS, FGamepadKeyNames::SpecialLeft},
-		/* [7] = */{JSMASK_SHARE, FGamepadKeyNames::SpecialLeft},
-		/* [8] = */{JSMASK_LCLICK, FGamepadKeyNames::LeftThumb},
-		/* [9] = */{JSMASK_RCLICK, FGamepadKeyNames::RightThumb},
-		/* [10] = */{JSMASK_L, FGamepadKeyNames::LeftShoulder},
-		/* [11] = */{JSMASK_R, FGamepadKeyNames::RightShoulder},
-		/* [12] = */{JSMASK_ZL, FGamepadKeyNames::LeftTriggerThreshold},
-		/* [13] = */{JSMASK_ZR, FGamepadKeyNames::RightTriggerThreshold},
-		/* [14] = */{JSMASK_S, FGamepadKeyNames::FaceButtonBottom},
-		/* [15] = */{JSMASK_E, FGamepadKeyNames::FaceButtonRight},
-		/* [16] = */{JSMASK_W, FGamepadKeyNames::FaceButtonLeft},
-		/* [17] = */{JSMASK_N, FGamepadKeyNames::FaceButtonTop},
-		
-		/* [18] = */{JSMASK_HOME, HomeButtonKeyName},
-		/* [19] = */{JSMASK_PS, PSButtonKeyName},
-		/* [20] = */{JSMASK_CAPTURE, CaptureButtonKeyName},
-		/* [21] = */{JSMASK_TOUCHPAD_CLICK, TouchPadClickKeyName},
-		/* [22] = */{JSMASK_MIC, MicButtonKeyName},
-		/* [23] = */{JSMASK_SL, SideLeftButtonKeyName},
-		/* [24] = */{JSMASK_SR, SideRightButtonKeyName},
-		/* [25] = */{JSMASK_FNL, FunctionLeftButtonKeyName},
-		/* [26] = */{JSMASK_FNR, FunctionRightButtonKeyName}
-	};
-	
-	TArray<FName> ButtonMappingByMaskIndex = {
-		/*[0] = */ FGamepadKeyNames::DPadUp,
-		/*[1] = */ FGamepadKeyNames::DPadDown,
-		/*[2] = */ FGamepadKeyNames::DPadLeft,
-		/*[3] = */ FGamepadKeyNames::DPadRight,
-		/*[4] = */ FGamepadKeyNames::SpecialRight,
-		/*[5] = */ FGamepadKeyNames::SpecialRight,
-		/*[6] = */ FGamepadKeyNames::SpecialLeft,
-		/*[7] = */ FGamepadKeyNames::SpecialLeft,
-		/*[8] = */ FGamepadKeyNames::LeftThumb,
-		/*[9] = */ FGamepadKeyNames::RightThumb,
-		/*[10] = */ FGamepadKeyNames::LeftShoulder,
-		/*[11] = */ FGamepadKeyNames::RightShoulder,
-		/*[12] = */ FGamepadKeyNames::LeftTriggerThreshold,
-		/*[13] = */ FGamepadKeyNames::RightTriggerThreshold,
-		/*[14] = */ FGamepadKeyNames::FaceButtonBottom,
-		/*[15] = */ FGamepadKeyNames::FaceButtonRight,
-		/*[16] = */ FGamepadKeyNames::FaceButtonLeft,
-		/*[17] = */ FGamepadKeyNames::FaceButtonTop,
-		
-		/*[18] = */ HomeButtonKeyName,
-		/*[19] = */ PSButtonKeyName,
-		
-		/*[20] = */ CaptureButtonKeyName,
-		
-		/*[21] = */ TouchPadClickKeyName,
-		/*[22] = */ MicButtonKeyName,
-		/*[23] = */ SideLeftButtonKeyName,
-		/*[24] = */ SideRightButtonKeyName,
-		/*[25] = */ FunctionLeftButtonKeyName,
-		/*[26] = */ FunctionRightButtonKeyName
+		{JSMASK_UP, FGamepadKeyNames::DPadUp},
+		{JSMASK_DOWN, FGamepadKeyNames::DPadDown},
+		{JSMASK_LEFT, FGamepadKeyNames::DPadLeft},
+		{JSMASK_RIGHT, FGamepadKeyNames::DPadRight},
+		{JSMASK_OPTIONS, FGamepadKeyNames::SpecialRight}, // Also matches JSMASK_PLUS
+		{JSMASK_SHARE, FGamepadKeyNames::SpecialLeft}, // == JSMASK_MINUS
+		{JSMASK_LCLICK, FGamepadKeyNames::LeftThumb},
+		{JSMASK_RCLICK, FGamepadKeyNames::RightThumb},
+		{JSMASK_L, FGamepadKeyNames::LeftShoulder},
+		{JSMASK_R, FGamepadKeyNames::RightShoulder},
+		{JSMASK_ZL, FGamepadKeyNames::LeftTriggerThreshold},
+		{JSMASK_ZR, FGamepadKeyNames::RightTriggerThreshold},
+		{JSMASK_S, FGamepadKeyNames::FaceButtonBottom},
+		{JSMASK_E, FGamepadKeyNames::FaceButtonRight},
+		{JSMASK_W, FGamepadKeyNames::FaceButtonLeft},
+		{JSMASK_N, FGamepadKeyNames::FaceButtonTop},
+
+		{JSMASK_PS, PSButtonKeyName}, // == JSMASK_HOME
+		{JSMASK_TOUCHPAD_CLICK, TouchPadClickKeyName}, // == JSMASK_CAPTURE
+		{JSMASK_MIC, MicButtonKeyName},
+		{JSMASK_SL, SideLeftButtonKeyName},
+		{JSMASK_SR, SideRightButtonKeyName},
+		{JSMASK_FNL, FunctionLeftButtonKeyName},
+		{JSMASK_FNR, FunctionRightButtonKeyName}
 	};
 
 	TStaticArray<double, MAX_NUM_CONTROLLER_BUTTONS> NextRepeatTimes{InPlace, 0.0};

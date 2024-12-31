@@ -263,40 +263,36 @@ void FJoyShockInterface::ProcessButtons(int32 CurrentButtons, int32 PreviousButt
 {
 	const double CurrentTime = FPlatformTime::Seconds();
 
-	if (CurrentButtons != PreviousButtons)
+	int32 PressedButtons = ~PreviousButtons & CurrentButtons;
+	int32 ReleasedButtons = PreviousButtons & ~CurrentButtons;
+	int32 HeldButtons = CurrentButtons & PreviousButtons;
+	
+	for (int32 Index = 0; Index < JoyShockMaskMappings.Num(); Index++)
 	{
-		// int32 ChangedButtons = CurrentButtons ^ PreviousButtons;
-		int32 PressedButtons = ~PreviousButtons & CurrentButtons; // ChangedButtons & CurrentButtons;
-		int32 ReleasedButtons = PreviousButtons & ~CurrentButtons; // ChangedButtons & ~CurrentButtons;
-		int32 HeldButtons = CurrentButtons & PreviousButtons; // ~ChangedButtons & CurrentButtons
+		TTuple<int32, FName> MaskMappingTuple = JoyShockMaskMappings[Index];
+		const int32& Mask = MaskMappingTuple.Key;
+		const FName& Mapping = MaskMappingTuple.Value;
 
-		for (int32 Index = 0; Index < JoyShockMaskMappings.Num(); Index++)
+		if (PressedButtons & Mask)
 		{
-			TTuple<int32, FName> MaskMappingTuple = JoyShockMaskMappings[Index];
-			const int32& Mask = MaskMappingTuple.Key;
-			const FName& Mapping = MaskMappingTuple.Value;
+			// UE_LOG(LogJoyShockLibrary, Log, TEXT(">>>>>>>BUTTON PRESSED: %s"), *Mapping.ToString());
+			MessageHandler->OnControllerButtonPressed(Mapping, PlatformUser, InputDevice, false);
+					
+			// this button was pressed - set the button's NextRepeatTime to the InitialButtonRepeatDelay
+			NextRepeatTimes[Index] = CurrentTime + InitialButtonRepeatDelay;
+		}
+		else if (ReleasedButtons & Mask)
+		{
+			// UE_LOG(LogJoyShockLibrary, Log, TEXT(">>>>>>>BUTTON RELEASED: %s"), *Mapping.ToString());
+			MessageHandler->OnControllerButtonReleased(Mapping, PlatformUser, InputDevice, false);
+		}
+		else if ((HeldButtons & Mask) && NextRepeatTimes[Index] <= CurrentTime)
+		{
+			// UE_LOG(LogJoyShockLibrary, Log, TEXT(">>>>>>>BUTTON HELD: %s"), *Mapping.ToString());
+			MessageHandler->OnControllerButtonPressed(Mapping, PlatformUser, InputDevice, true);
 
-			if (PressedButtons & Mask)
-			{
-				// UE_LOG(LogJoyShockLibrary, Log, TEXT(">>>>>>>BUTTON PRESSED: %s"), *Mapping.ToString());
-				MessageHandler->OnControllerButtonPressed(Mapping, PlatformUser, InputDevice, false );
-						
-				// this button was pressed - set the button's NextRepeatTime to the InitialButtonRepeatDelay
-				NextRepeatTimes[Index] = CurrentTime + InitialButtonRepeatDelay;
-			}
-			else if (ReleasedButtons & Mask)
-			{
-				// UE_LOG(LogJoyShockLibrary, Log, TEXT(">>>>>>>BUTTON RELEASED: %s"), *Mapping.ToString());
-				MessageHandler->OnControllerButtonReleased(Mapping, PlatformUser, InputDevice, false );
-			}
-			else if ((HeldButtons & Mask) && NextRepeatTimes[Index] <= CurrentTime)
-			{
-				// UE_LOG(LogJoyShockLibrary, Log, TEXT(">>>>>>>BUTTON HELD: %s"), *Mapping.ToString());
-				MessageHandler->OnControllerButtonPressed(Mapping, PlatformUser, InputDevice, true );
-
-				// set the button's NextRepeatTime to the ButtonRepeatDelay
-				NextRepeatTimes[Index] = CurrentTime + ButtonRepeatDelay;
-			}
+			// set the button's NextRepeatTime to the ButtonRepeatDelay
+			NextRepeatTimes[Index] = CurrentTime + ButtonRepeatDelay;
 		}
 	}
 }
