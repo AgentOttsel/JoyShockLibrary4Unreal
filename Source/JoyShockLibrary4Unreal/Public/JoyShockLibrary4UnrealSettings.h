@@ -19,10 +19,12 @@ public:
 	virtual FName GetContainerName() const override { return FName("Project"); }
 	virtual FName GetCategoryName() const override { return FName("Plugins"); }
 	virtual FName GetSectionName() const override { return FName("JoyShockLibrary4Unreal"); }
-	
+
+#if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 
 	FORCEINLINE FJSL4USettingsChangedDelegate& GetOnSettingsChanged() { return OnSettingsChanged; }
+#endif
 	
 	/* TODO: Add support for these settings in the future:
 	// The original JoyShockLibrary returns motion-related values in a Right-handed Y-Up format.
@@ -43,5 +45,7 @@ public:
 	TArray<FColor> ConnectedControllerColors = {}; */
 
 protected:
+#if WITH_EDITOR
 	FJSL4USettingsChangedDelegate OnSettingsChanged;
+#endif
 };

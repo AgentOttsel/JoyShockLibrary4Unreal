@@ -36,10 +36,12 @@ FJoyShockInterface::FJoyShockInterface(const TSharedRef<FGenericApplicationMessa
 {
 	CachedSettings = GetMutableDefault<UJoyShockLibrary4UnrealSettings>();
 
+#if WITH_EDITOR
 	CachedSettings->GetOnSettingsChanged().AddLambda([this]
 	{
 		CachedSettings = GetMutableDefault<UJoyShockLibrary4UnrealSettings>();
 	});
+#endif
 
 	InitializeAdditionalKeys();
 
@@ -137,13 +139,6 @@ void FJoyShockInterface::GetPlatformUserAndDevice(int32 InControllerId, EInputDe
 	{
 		DeviceMapper.Internal_MapInputDeviceToUser(OutDeviceId, OutPlatformUserId, InDeviceState);
 	}
-}
-
-float ShortToNormalizedFloat(int16 AxisVal)
-{
-	// Normalize [-32768..32767] -> [-1..1]
-	const float Norm = (AxisVal <= 0 ? 32768.f : 32767.f);
-	return float(AxisVal) / Norm;
 }
 
 void FJoyShockInterface::SendControllerEvents()
