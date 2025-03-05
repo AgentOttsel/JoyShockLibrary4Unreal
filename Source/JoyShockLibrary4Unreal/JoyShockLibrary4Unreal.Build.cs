@@ -5,6 +5,8 @@ using System.IO;
 
 public class JoyShockLibrary4Unreal : ModuleRules
 {
+	private string ThirdPartyPath => Path.GetFullPath(Path.Combine(ModuleDirectory, "../../ThirdParty/"));
+
 	public JoyShockLibrary4Unreal(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
@@ -13,6 +15,7 @@ public class JoyShockLibrary4Unreal : ModuleRules
 			new string[]
 			{
 				// "JoyShockLibrary4Unreal/JoyShockLibrary/hidapi"
+				Path.Combine(ThirdPartyPath, "hidapi")
 			}
 		);
 
@@ -41,8 +44,9 @@ public class JoyShockLibrary4Unreal : ModuleRules
 				"ApplicationCore",
 				"CoreUObject",
 				"Engine",
-				"HIDUE",
+				// "HIDUE",
 				"InputCore",
+				"Projects",
 				"Slate",
 				"SlateCore",
 				// ... add private dependencies that you statically link with here ...	
@@ -57,17 +61,26 @@ public class JoyShockLibrary4Unreal : ModuleRules
 			}
 		);
 
-		/*if (Target.Platform == UnrealTargetPlatform.Win64)
+		if (Target.Platform == UnrealTargetPlatform.Win64)
 		{
 			// string BuildString = (Target.Configuration != UnrealTargetConfiguration.Debug) ? "Release" : "Release";
-			PublicAdditionalLibraries.Add(Path.Combine(ModuleDirectory, "JoyShockLibrary", "hidapi", "x64", "hidapi.lib"));
+			string x64Path = Path.Combine(ThirdPartyPath, "hidapi", "x64");
+			PublicAdditionalLibraries.Add(Path.Combine(x64Path, "hidapi.lib"));
 
 			PublicDelayLoadDLLs.Add("hidapi.dll");
-			RuntimeDependencies.Add(Path.Combine(ModuleDirectory, "JoyShockLibrary", "hidapi", "x64", "hidapi.dll"));
+			RuntimeDependencies.Add(Path.Combine(x64Path, "hidapi.dll"));
 		}
-		else if (Target.Platform == UnrealTargetPlatform.Linux)
+		/*else if (Target.Platform == UnrealTargetPlatform.Linux)
 		{
-			
+			// TODO: Add DLL equivalent for Linux
+		}
+		else if (Target.Platform == UnrealTargetPlatform.Mac)
+		{
+			// TODO: Add DLL equivalent for Mac
 		}*/
+		else // Fallback to HIDUE plugin (get source from https://github.com/microdee/HIDUE)
+		{
+			PrivateDependencyModuleNames.Add("HIDUE");
+		}
 	}
 }

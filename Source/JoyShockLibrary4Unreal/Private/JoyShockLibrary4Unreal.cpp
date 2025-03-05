@@ -3,10 +3,13 @@
 #include "JoyShockLibrary4Unreal.h"
 
 #include "JoyShockInterface.h"
+#include "Interfaces/IPluginManager.h"
 
 #define LOCTEXT_NAMESPACE "FJoyShockLibrary4UnrealModule"
 
 #if PLATFORM_WINDOWS
+void *hidapiDllHandle = nullptr;
+
 bool FWindowsDeviceChangeMessageHandler::ProcessMessage(HWND hwnd, uint32 msg, WPARAM wParam, LPARAM lParam,
 	int32& OutResult)
 {
@@ -37,10 +40,23 @@ void FJoyShockLibrary4UnrealModule::StartupModule()
 			// TODO: Add Linux and macOS support
 		}
 	}
+
+#if PLATFORM_WINDOWS
+	FString AbsPath = IPluginManager::Get().FindPlugin("JoyShockLibrary4Unreal")->GetBaseDir() / TEXT("ThirdParty/hidapi/x64");
+	hidapiDllHandle = FPlatformProcess::GetDllHandle(*(AbsPath / TEXT("hidapi.dll")));
+#endif
 }
 
 void FJoyShockLibrary4UnrealModule::ShutdownModule()
 {
+#if PLATFORM_WINDOWS
+	if (hidapiDllHandle)
+	{
+		FPlatformProcess::FreeDllHandle(hidapiDllHandle);
+		hidapiDllHandle = nullptr;
+	}
+#endif
+
 	// Application is already invalid at this point, so there's no message handler to remove.
 	/*if (FSlateApplication::IsInitialized())
 	{
