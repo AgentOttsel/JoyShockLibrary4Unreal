@@ -649,12 +649,23 @@ namespace GamepadMotionHelpers
 				Grav = accelNorm * -gravityLength;
 			}
 
-			const Vec gravityDirection = Grav.Normalized() * Quaternion.Inverse(); // absolute gravity direction
+			// This block had drifted from upstream GamepadMotionHelpers in three places, which together are
+			// the long-standing "gravity correction is buggy" problem:
+			//   1. gravityDirection used Quaternion.Inverse() instead of Quaternion, rotating the measured
+			//      gravity the wrong way when converting it to absolute space;
+			//   2. the Cross operands were swapped, which negates the rotation axis -- so the correction
+			//      pushed the orientation AWAY from gravity instead of onto it;
+			//   3. the correction was applied as Quaternion * correctionQuat (a local rotation), but it is
+			//      derived in absolute space and must be applied globally, on the left.
+			// Errors 1 and 3 partly cancel, which is why the result was wrong only for "some rotation
+			// combinations" rather than obviously wrong all the time. Restored to upstream (FMath::Clamp is
+			// the only intended deviation, for Unreal).
+			const Vec gravityDirection = Grav.Normalized() * Quaternion; // absolute gravity direction
 			const float errorAngle = acosf(FMath::Clamp(Vec(0.0f, -1.0f, 0.0f).Dot(gravityDirection), -1.f, 1.f));
-			const Vec flattened = Vec(0.0f, -1.0f, 0.0f).Cross(gravityDirection);
+			const Vec flattened = gravityDirection.Cross(Vec(0.0f, -1.0f, 0.0f));
 			Quat correctionQuat = AngleAxis(errorAngle, flattened.x, flattened.y, flattened.z);
-			
-			Quaternion = Quaternion * correctionQuat;
+
+			Quaternion = correctionQuat * Quaternion;
 
 			// TEST BEGIN
 			/*FlattenedX = -flattened.z;

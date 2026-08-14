@@ -1,35 +1,17 @@
+// tools.h - The two byte-fiddling helpers the parsers still use.
+//
+// Inherited from JibbSmart's library, which had a fuller set: signed/unsigned conversions, a bit-mask
+// builder and four variations on a hex dump. Only these two ever had a caller here, so the rest is gone
+// rather than left as a menu of functions nobody picked from.
 #pragma once
 
-
+#include <cstdint>
 #include <cstring>
 
-//#include <curl/curl.h>
-
-// #pragma warning(disable: 4996)
-
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-typedef int8_t s8;
-typedef int16_t s16;
-typedef int32_t s32;
-typedef int64_t s64;
-
-int16_t unsignedToSigned16(uint16_t n);
-
+// Reinterprets a controller's raw 16-bit sensor word as signed, without the implementation-defined
+// behaviour of a cast. Used by every family's report parser.
 int16_t uint16_to_int16(uint16_t a);
 
-uint16_t combine_uint8_t(uint8_t a, uint8_t b);
-
-int16_t combine_gyro_data(uint8_t a, uint8_t b);
-
-unsigned createMask(unsigned a, unsigned b);
-
+// Prints a report as space-separated hex bytes. A debugging aid: this is how a new controller's report
+// layout gets read off the wire in the first place.
 void hex_dump(unsigned char *buf, int len);
-
-void hex_dump2(unsigned char *buf, int len);
-
-void hex_dump_0(unsigned char *buf, int len);
-
-void int_dump(unsigned char *buf, int len);

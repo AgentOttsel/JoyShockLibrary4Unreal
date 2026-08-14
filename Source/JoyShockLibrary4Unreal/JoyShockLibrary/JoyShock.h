@@ -45,17 +45,63 @@ enum ControllerType { n_switch, s_ds4, s_ds };
 #define JOYCON_R_BT 0x2007
 #define PRO_CONTROLLER 0x2009
 #define JOYCON_CHARGING_GRIP 0x200e
+// Nintendo Switch 2 Pro Controller (enumerates as VID 057E / PID 2069 over USB). NOTE: the Switch 2 uses a
+// newer input protocol than the Switch 1 controllers above, so this is recognised/created here but full
+// input parsing may still need protocol-specific work.
+#define PRO_CONTROLLER_2 0x2069
+// The Switch 2 Joy-Cons. They never appear over USB -- the console charges them through the rails, and a
+// cable to a PC gives nothing -- so these ids only ever come out of a Bluetooth advertisement.
+#define SWITCH2_JOYCON_R 0x2066
+#define SWITCH2_JOYCON_L 0x2067
 #define L_OR_R(lr) (lr == 1 ? 'L' : (lr == 2 ? 'R' : '?'))
+
+// Whether this Windows HID path belongs to a Bluetooth device. Used both to decide a controller's
+// transport at connect time and to recognise the cable when the same controller appears twice.
+bool IsBluetoothHidPath(const FString& InPath);
 
 class JoyShock {
 
 public:
 
 	hid_device * handle;
+
+	// Set instead of `handle` for a Switch 2 controller reached over Bluetooth. Those are BLE GATT
+	// peripherals rather than HID devices, so there is no hid_device to open -- reads and writes go through
+	// Switch2Ble instead. Exactly one of the two is ever set; read_input_report picks between them so the
+	// polling thread does not have to care which transport it is on.
+	class FSwitch2BleConnection* ble_connection = nullptr;
+	bool is_ble() const { return ble_connection != nullptr; }
+
 	int32 intHandle = 0;
 	FString path;
 
 	wchar_t *serial;
+
+	// The controller's own MAC address, lower-case and without separators, or empty when it could not be
+	// determined. This is the only thing that identifies a physical controller across transports: plugging
+	// a USB cable into a controller that is already paired over Bluetooth enumerates a SECOND HID device
+	// with its own path, which the plugin would otherwise treat as a second controller. See ConnectDevices.
+	FString mac_address;
+
+	// The key this device's intHandle was reserved under: its MAC when one could be read, otherwise the HID
+	// path it was found on. Stored rather than recomputed because both of those can change while the device
+	// lives -- a transport switch replaces `path` -- and the handle has to be released under the same key it
+	// was taken with, or it is never reusable again and device ids climb for the rest of the session.
+	FString handle_identity;
+
+	// Transport switching. A controller reachable two ways at once (paired over Bluetooth, then plugged
+	// in) should be read over the cable -- lower latency, no packet loss -- and fall back to the radio the
+	// moment the cable is pulled, with the game seeing neither transition. This mirrors what a PS4/PS5
+	// does, except that there the console and firmware negotiate it; here both links stay live and the
+	// only decision is which handle to read.
+	//
+	// Both swaps are performed BY the polling thread on itself. It owns the handle, so nothing has to stop
+	// it first -- which is what keeps enumeration from ever having to join a thread while holding the
+	// connected lock, a deadlock the polling thread's own disconnect path would walk straight into.
+	//
+	// Guarded by modifying_lock, since enumeration writes pending_transport_path from another thread.
+	FString pending_transport_path;
+	FString fallback_path;
 
 	FString name;
 
@@ -89,6 +135,114 @@ public:
 	int8_t dstick;
 	uint8_t battery;
 
+	// Charge, normalised across controller families so the Blueprint layer does not have to know each
+	// vendor's encoding: 0 = empty, 1 = critical, 2 = low, 3 = medium, 4 = full, and 0xFF for "this
+	// controller does not report it". Written by the polling thread as reports arrive, read by the game
+	// thread, hence atomic.
+	// Set once the first Sony battery byte has been logged for this connection. The DS4/DualSense offsets
+	// were written from public documentation rather than measured here, so the first reading is logged to
+	// be compared against what the OS reports -- once, not per report, since it is a verification aid and
+	// not a running diagnostic.
+	bool logged_battery_byte = false;
+
+	static constexpr uint8_t BatteryLevelUnknown = 0xFF;
+	std::atomic<uint8_t> battery_level{ BatteryLevelUnknown };
+	std::atomic<bool> battery_charging{ false };
+
+	// Charge as a percentage, or -1 where the hardware does not report one finely enough to be worth
+	// quoting. The Sony controllers and the Switch 2 fill this; a Switch 1 controller reports five states,
+	// and turning those into "75%" would be inventing digits the hardware never measured.
+	std::atomic<int32> battery_percent{ -1 };
+
+	// Sensors only the Switch 2 controllers carry, kept apart from imu_state because they are not motion
+	// and nothing outside this family reports them. All are written by the polling thread and read by the
+	// game thread, hence atomic.
+	std::atomic<float> sw2_battery_volts{ 0.f };
+	std::atomic<float> sw2_temperature_celsius{ 0.f };
+	std::atomic<int32> sw2_magnetometer_x{ 0 };
+	std::atomic<int32> sw2_magnetometer_y{ 0 };
+	std::atomic<int32> sw2_magnetometer_z{ 0 };
+	// The optical sensor in the controller's underside, used for mouse mode. Coordinates are the sensor's
+	// own accumulating position, not a per-frame delta; roughness and distance are its read of the surface
+	// it is on, and are what tell you whether it is being used as a mouse at all.
+	std::atomic<int32> sw2_mouse_x{ 0 };
+	std::atomic<int32> sw2_mouse_y{ 0 };
+	std::atomic<int32> sw2_mouse_roughness{ 0 };
+	std::atomic<int32> sw2_mouse_distance{ 0 };
+
+	// The same movement, added up instead of wrapped.
+	//
+	// The sensor's own position runs 0..65535 and rolls over, so subtracting one reading from an earlier one
+	// reports a jump of a full 65536 whenever it does -- roughly every 80cm of desk, and always as a
+	// violent flick in whatever a game aimed with it. Every consumer would have to know that and undo it.
+	// Undone once here instead, on the thread that sees every report and therefore never misses a step: the
+	// wrap is resolved against the previous reading and the difference accumulated. What comes out only
+	// grows, and differences taken from it are just differences.
+	std::atomic<int64> sw2_mouse_travel_x{ 0 };
+	std::atomic<int64> sw2_mouse_travel_y{ 0 };
+
+	// Where each consumer of that travel left off. Two, because the Blueprint node and the engine's input
+	// axes are separate readers of the same movement: sharing one baseline would have each of them see only
+	// the part the other had not taken yet, which is the halved sensitivity the node's own tooltip warns
+	// about -- except silently, and between two things a game never asked to have connected.
+	std::atomic<int64> sw2_mouse_consumed_x{ 0 };
+	std::atomic<int64> sw2_mouse_consumed_y{ 0 };
+	std::atomic<int64> sw2_mouse_axis_x{ 0 };
+	std::atomic<int64> sw2_mouse_axis_y{ 0 };
+
+	// Movement since the given baseline last moved forward, moving it forward to now.
+	//
+	// Exchanged rather than read-then-written: between a read and a write the polling thread adds more
+	// travel, and writing back what was read would drop it. The exchange leaves the baseline at exactly
+	// what is being reported, so nothing between two calls is lost or counted twice.
+	void consume_mouse_travel(std::atomic<int64>& baselineX, std::atomic<int64>& baselineY,
+		int64& outDeltaX, int64& outDeltaY)
+	{
+		const int64 travelX = sw2_mouse_travel_x.load();
+		const int64 travelY = sw2_mouse_travel_y.load();
+		outDeltaX = travelX - baselineX.exchange(travelX);
+		outDeltaY = travelY - baselineY.exchange(travelY);
+	}
+
+	// Adds one report's movement to the running travel. Polling thread only.
+	void accumulate_mouse_travel(int32 mouseX, int32 mouseY)
+	{
+		// A step is only meaningful against a previous reading, and the first report has none: taking it
+		// against zero would count the sensor's whole starting offset as movement the player never made.
+		if (sw2_mouse_seen)
+		{
+			// The shortest way round. A real step between reports 7.5ms apart is small, so a difference that
+			// looks enormous is the counter having wrapped, not the controller having crossed the desk.
+			auto Step = [](int32 current, int32 previous)
+			{
+				int32 step = current - previous;
+				if (step > 32767) { step -= 65536; }
+				else if (step < -32768) { step += 65536; }
+				return static_cast<int64>(step);
+			};
+
+			sw2_mouse_travel_x.fetch_add(Step(mouseX, sw2_mouse_prev_x));
+			sw2_mouse_travel_y.fetch_add(Step(mouseY, sw2_mouse_prev_y));
+		}
+
+		sw2_mouse_prev_x = mouseX;
+		sw2_mouse_prev_y = mouseY;
+		sw2_mouse_seen = true;
+	}
+
+	// The previous raw mouse reading, and whether there has been one. Polling thread only, hence not atomic.
+	int32 sw2_mouse_prev_x = 0;
+	int32 sw2_mouse_prev_y = 0;
+	bool sw2_mouse_seen = false;
+
+	// Input suppression for the moment a controller arrives. The button that woke a Bluetooth controller is
+	// still held when its first reports come in, so without this it reaches the game as a press -- and on a
+	// Joy-Con the wake button is usually SL/SR or a shoulder, which is exactly what the grip chords watch.
+	// Cleared by the first report with nothing held, or by the deadline, whichever comes first: a player
+	// genuinely holding a button at connect must not be locked out for good.
+	bool input_settled = false;
+	std::chrono::steady_clock::time_point input_settle_deadline;
+
 	int32 global_count = 0;
 
 	// calibration data:
@@ -119,8 +273,78 @@ public:
 	ControllerType controller_type = ControllerType::n_switch;
 	bool is_usb = false;
 
+	// Any Switch 2 controller -- the Pro Controller 2 or either Joy-Con 2. They share one protocol, which
+	// differs from the Switch 1's: over a cable, commands (init, SPI reads, rumble) go over the controller's
+	// WinUSB bulk interface rather than HID; over the radio they are GATT writes. Which of the three this is
+	// comes from left_right, exactly as it does for the Switch 1 controllers.
+	bool is_switch2 = false;
+
+	// A single Joy-Con 2 rather than a whole controller. What actually differs is what it has: one stick,
+	// half the buttons, a pair of rail buttons, and a gyro on a different range.
+	bool is_switch2_joycon() const { return is_switch2 && (left_right == 1 || left_right == 2); }
+
+	// The JS_TYPE_* value this device reports. Only meaningful for the Switch family; the Sony controllers
+	// have a type of their own and never reach this.
+	int32 switch_legacy_type() const
+	{
+		if (!is_switch2)
+		{
+			return left_right;
+		}
+		switch (left_right)
+		{
+		case 1:  return JS_TYPE_JOYCON2_LEFT;
+		case 2:  return JS_TYPE_JOYCON2_RIGHT;
+		default: return JS_TYPE_PRO_CONTROLLER_2;
+		}
+	}
+
+	// Degrees per second per raw gyro LSB. The Switch 2's two shapes do not share a sensor range: the Pro
+	// Controller 2 reads 14.2857 LSB/dps (the Switch 1's 936/13371) while a Joy-Con 2 reads 16.384, so using
+	// one figure for both makes the other's motion off by 15%.
+	float switch2_gyro_scale() const { return is_switch2_joycon() ? (1.0f / 16.384f) : (936.0f / 13371.0f); }
+
+	// WinUSB handles for the Switch 2 command interface (void* keeps Windows types out of this header).
+	// The interface is released after a short idle period so a multi-process Standalone session can take
+	// ownership from its parent editor without either process permanently blocking the other.
+	void* sw2_winusb_file = nullptr;   // HANDLE
+	void* sw2_winusb_handle = nullptr; // WINUSB_INTERFACE_HANDLE
+	unsigned char sw2_out_pipe = 0x02;
+	unsigned char sw2_in_pipe = 0x82;
+	bool sw2_init_succeeded = false;
+
+	// Switch 2 HD rumble: the controller consumes a stream of amplitude/frequency frames, each packet
+	// carrying a rolling 4-bit id it uses to drop duplicates. Two routes can carry them (see
+	// set_sw2_rumble); once one is proven to work the other is not tried again.
+	unsigned char sw2_rumble_packet_id = 0;
+	bool sw2_rumble_route_logged = false;
+	bool sw2_hid_rumble_ok = false;
+	std::chrono::steady_clock::time_point sw2_last_open_attempt = {};
+	std::chrono::steady_clock::time_point sw2_last_command_time = {};
+	bool sw2_access_warning_logged = false;
+	int sw2_access_denied_count = 0;
+	bool sw2_init_failure_logged = false;
+
+	// Opens (or re-opens) this controller's WinUSB command interface and stores the handles/pipes above.
+	// Fails with a bounded warning when another process holds the interface exclusively.
+	bool sw2_open_winusb();
+	void release_sw2_command_interface_if_idle();
+
+	// Rumble has two independent sources and they must not overwrite each other. These two are what a game
+	// asks for directly through JSL4USetControllerRumble, and hold until it asks for something else.
 	unsigned char small_rumble = 0;
 	unsigned char big_rumble = 0;
+
+	// ...and these are what Unreal's own force feedback asks for. The engine pushes its values every single
+	// frame -- zeroes when no effect is playing -- so routing both sources through the same two fields meant
+	// force feedback silently wiped any directly-set rumble on the very next frame.
+	// The polling thread sends the stronger of the two per motor, so an effect can play over a held rumble
+	// and neither API can cancel the other.
+	unsigned char ff_small_rumble = 0;
+	unsigned char ff_big_rumble = 0;
+
+	unsigned char get_wanted_small_rumble() const { return small_rumble > ff_small_rumble ? small_rumble : ff_small_rumble; }
+	unsigned char get_wanted_big_rumble() const { return big_rumble > ff_big_rumble ? big_rumble : ff_big_rumble; }
 	unsigned char led_r = 0;
 	unsigned char led_g = 0;
 	unsigned char led_b = 0;
@@ -137,6 +361,21 @@ public:
 	bool delete_on_finish = false;
 	bool remove_on_finish = true;
 	std::thread* thread = nullptr;
+
+	// Set by the polling thread as the last thing it does, when it is leaving without freeing this device --
+	// i.e. when something else owns it and is waiting to. std::thread cannot be joined with a deadline, and
+	// a thread wedged in a blocking HID write must not be able to hold the editor open forever, so shutdown
+	// waits on this instead of on a join it could never take back. Atomic because it is the handoff between
+	// the polling thread and whoever is waiting for it.
+	std::atomic<bool> thread_exited{ false };
+
+	// Set by the poll thread the first time this device delivers a real input report, and never cleared.
+	// Until then the device is only "enumerable", not proven: a controller that has been powered off can
+	// still linger in HID enumeration long enough to be opened and to answer the init handshake, yet it
+	// never sends input. Connect/disconnect are only reported to the engine for devices that got this far,
+	// so such a phantom is never announced as a controller. Atomic because the poll thread writes it while
+	// the game thread reads it.
+	std::atomic<bool> has_delivered_input{ false };
 
 	// for calibration:
 	bool use_continuous_calibration = false;
@@ -235,6 +474,15 @@ public:
 
 	JoyShock(struct hid_device_info* dev, hid_device* inHandle, int32 uniqueHandle, const FString& inPath);
 
+	// Builds a Switch 2 controller reached over Bluetooth. There is no hid_device_info for one of these --
+	// everything the HID path reads out of the descriptor comes from the advertisement instead.
+	JoyShock(class FSwitch2BleConnection* inConnection, uint16 productId, uint64 address, int32 uniqueHandle,
+		const FString& inPath);
+
+	// Reads one input report from whichever transport this controller is on, with hid_read_timeout's
+	// contract: the report's length, 0 on timeout, negative once the device is gone.
+	int32 read_input_report(unsigned char* buf, int32 bufLength, int32 timeoutMs);
+
 	~JoyShock();
 
 	void push_cumulative_gyro(float gyroX, float gyroY, float gyroZ);
@@ -257,15 +505,103 @@ public:
 
 	bool send_subcommand(int32 command, int32 subcommand, uint8_t *data, int32 len);
 
+	// Sends a Switch subcommand and waits for the controller's 0x21 acknowledgement, re-sending on loss.
+	// Use for configuration subcommands whose silent loss is permanent (IMU enable, report mode): unlike
+	// send_subcommand, a true return means the controller actually applied the command.
+	bool send_subcommand_with_ack(int32 subcommand, const uint8_t *data, int32 len);
+
+	// Writes a Switch subcommand without reading any reply. The only subcommand form that is safe from the
+	// polling thread: that thread is the handle's sole reader once the controller streams, so a read here
+	// would steal input reports, while a bare write rides alongside the stream like the rumble packets the
+	// polling thread already sends. The 0x21 ack arrives interleaved in the input stream and is parsed as
+	// a harmless buttons-only report.
+	bool write_subcommand(int32 subcommand, const uint8_t *data, int32 len);
+
+	// One bit per output capability, mirroring EJSL4UControllerFunction (bit = 1 << (uint8)Function). A set
+	// bit means that function's most recent write failed. Whether that means "blocked by another
+	// application" is judged by the polling loop, not here: only a device whose input keeps flowing gets
+	// its failures reported -- an unplugged controller fails its writes too, and its read says so first.
+	static constexpr uint8_t OutputFunctionRumble = 1 << 0;
+	static constexpr uint8_t OutputFunctionPlayerIndicator = 1 << 1;
+	static constexpr uint8_t OutputFunctionHomeLight = 1 << 2;
+	static constexpr uint8_t OutputFunctionMotionSensor = 1 << 3;
+	std::atomic<uint8_t> failed_output_functions{ 0 };
+
+	// Records the outcome of an output write for the given function bits: failure marks them, success
+	// clears them (which also re-arms the polling loop's one-shot blocked report).
+	void note_output_result(uint8_t FunctionBits, bool bSucceeded);
+
 	void rumble(int32 frequency, int32 intensity);
 
 	bool get_switch_controller_info();
 
-	void enable_IMU(unsigned char *buf, int32 bufLength);
+	// Returns whether the controller confirmed the IMU is on. Only the Bluetooth Switch path can report
+	// failure; the other transports keep their historical fire-and-forget behaviour and return true.
+	bool enable_IMU(unsigned char *buf, int32 bufLength);
 
 	bool init_usb();
 
 	bool init_bt();
+
+	// Nintendo Switch 2 init sequence (sends the SW2 command reports that make it start streaming input),
+	// reads factory stick calibration/colours over SPI, and keeps the WinUSB command interface open.
+	bool init_switch2();
+
+	// The same for a controller reached over Bluetooth: the commands are the protocol's, not the cable's,
+	// so the sequence matches -- but they travel on the GATT command characteristic, and factory data is
+	// read with a different subcommand than the USB path's SPI read.
+	bool init_switch2_bluetooth();
+	bool read_sw2_ble_memory(uint32 address, int32 length, TArray<uint8>& outData);
+
+	// Sends an HD-rumble packet to a Switch 2 controller. smallRumble drives the high-frequency motor
+	// component, bigRumble the low-frequency one (0-255 each), and both are true amplitudes rather than
+	// the on/off preset this used to trigger.
+	void set_sw2_rumble(int smallRumble, int bigRumble);
+
+	// Packs one 5-byte Switch 2 HD-rumble frame: a 40-bit little-endian bitfield of
+	// lf_freq:9, lf_tone:1, lf_amp:10, hf_freq:9, hf_tone:1, hf_amp:10. Frequencies are the 9-bit
+	// encoded values (0x0E1 / 0x1E1 are the neutral pair), amplitudes are 0-1023.
+	static void encode_sw2_rumble_frame(uint16_t lfFreq, uint16_t lfAmp, uint16_t hfFreq, uint16_t hfAmp,
+		unsigned char* outFrame);
+
+	// Builds one 16-byte Switch 2 motor block: a packet-id byte followed by three identical 5-byte frames
+	// (the controller consumes ~5ms of waveform per frame, so one block is ~15ms of rumble).
+	void build_sw2_rumble_block(int smallRumble, int bigRumble, unsigned char* outBlock);
+
+	// Sets the Switch 2 player-indicator bit pattern over its WinUSB command interface.
+	bool set_sw2_player_lights(unsigned char playerLightMask);
+
+	// Sends an HD-rumble packet (output report 0x10) to a Switch 1 controller (Joy-Con / Pro Controller).
+	// smallRumble drives the high-frequency component, bigRumble the low-frequency one (0-255 each).
+	void set_switch_rumble(int smallRumble, int bigRumble);
+
+	// Sets the four player-indicator LEDs on a Switch 1 Joy-Con / Pro Controller.
+	bool set_switch_player_lights(unsigned char playerLightMask);
+
+	// The blue HOME-button light is a notification light, not a player indicator. Keep it off when
+	// JSL4U owns the controller so it cannot be confused with the four green player LEDs.
+	bool clear_switch_home_light();
+
+	// Sets the HOME ring to a steady brightness (0-15). Zero is off, which is what clear_switch_home_light
+	// asks for.
+	bool set_switch_home_light(unsigned char intensity);
+
+	// Ownership of the HOME light. The plugin clears the light once when the controller comes online, and
+	// that upkeep must stop the moment a game sets the light deliberately, or the two would fight -- so the
+	// first JSL4USetHomeLight call hands ownership over for good.
+	std::atomic<bool> home_light_owned_by_game{ false };
+	std::atomic<unsigned char> wanted_home_light{ 0 };
+
+	// Bumped by every JSL4USetHomeLight call, including one that asks for the value the light is already
+	// believed to hold. The polling thread writes whenever this differs from the generation it last sent, so
+	// what reaches the controller is one write per call rather than one write per change.
+	//
+	// The difference matters because this light is not ours alone: the firmware switches it back on by
+	// itself (a reconnect or a battery notification is enough). Comparing intensities meant the plugin
+	// answered "already 0, nothing to do" to a game trying to turn off a light that was physically lit --
+	// so "set 0" appeared to do nothing, while "set 0.5 then 0" worked, because only the second of those
+	// changed the cached value. A game asking for a state is entitled to have it sent.
+	std::atomic<uint32> home_light_generation{ 0 };
 
 	void init_ds4_bt();
 
