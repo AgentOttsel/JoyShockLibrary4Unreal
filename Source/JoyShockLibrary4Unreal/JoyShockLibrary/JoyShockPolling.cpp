@@ -696,6 +696,15 @@ void pollIndividualLoop(JoyShock *jc) {
 					}
 				}
 			}
+			
+			// Detect Switch 1 simple HID report mode reset (0x3F) and trigger mode recovery
+			if (jc->controller_type == n_switch && !jc->is_switch2 && buf[0] == 0x3F)
+			{
+				UE_LOG(LogJoyShockLibrary, Warning,
+					TEXT("Controller %d (%s): 0x3F mode reset detected; re-asserting full report mode."),
+					jc->intHandle, *jc->name);
+				jc->recover_switch_mode();
+			}
 
 			send_pending_output_reports(jc, out);
 			// we want to be able to do these check-and-calls without fear of interruption by another thread. there could be many threads (as many as connected controllers),

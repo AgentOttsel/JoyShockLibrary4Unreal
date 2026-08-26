@@ -374,3 +374,20 @@ void JoyShock::note_output_result(uint8_t FunctionBits, bool bSucceeded) {
 		failed_output_functions |= FunctionBits;
 	}
 }
+
+bool JoyShock::recover_switch_mode() {
+	if (controller_type != ControllerType::n_switch || is_switch2) {
+		return false;
+	}
+
+	// Subcommand 0x03: Restore full report mode (0x30)
+	uint8_t reportMode = 0x30;
+	bool bModeOk = write_subcommand(0x03, &reportMode, 1);
+
+	// Subcommand 0x40: Re-enable IMU sensor output
+	uint8_t imuEnable = 0x01;
+	bool bImuOk = write_subcommand(0x40, &imuEnable, 1);
+
+	note_output_result(OutputFunctionMotionSensor, bModeOk && bImuOk);
+	return bModeOk && bImuOk;
+}

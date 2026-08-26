@@ -538,6 +538,9 @@ public:
 	// Returns whether the controller confirmed the IMU is on. Only the Bluetooth Switch path can report
 	// failure; the other transports keep their historical fire-and-forget behaviour and return true.
 	bool enable_IMU(unsigned char *buf, int32 bufLength);
+	
+	// Restores standard full input report mode (0x30) and re-enables IMU when a Switch 1 controller resets.
+	bool recover_switch_mode();
 
 	bool init_usb();
 
