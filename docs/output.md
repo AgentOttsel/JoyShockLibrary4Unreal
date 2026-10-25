@@ -2,54 +2,78 @@
 
 ## Rumble
 
-These controllers work with **Unreal's own force feedback**. `Play Force Feedback Effect`, `Client Play Force Feedback` and Enhanced Input's force feedback effects drive a DualShock 4, DualSense, Joy-Con or Pro Controller exactly as they drive an Xbox pad — so authored effects with curves, falloff and looping work, and you get one code path for every gamepad. Nothing to enable. Effects are aimed at a *player*, so both halves of a joined Joy-Con pair rumble together.
+Every controller this plugin drives can rumble, and there are two ways to drive it.
 
-The channels map the way Unreal's XInput interface reads them: `LeftLarge` drives the heavy/low-frequency motor and `RightSmall` the light/high-frequency one, so an effect authored against a standard gamepad comes out the same here.
+### Force feedback — the usual way
 
-For direct control there is `JSL4U Set Controller Rumble (ConnectionId, SmallRumble, BigRumble)`, 0-1 per motor (call it with `(0, 0)` to stop). Both routes reach the same maximum — force feedback is clamped to 0-1 and 1 arrives as full strength — so an effect that feels weak is a weak curve in the asset rather than a limit here. (`Force Feedback Scale` and `b Force Feedback Enabled` on the PlayerController also apply.)
+These controllers work with **Unreal's own force feedback**. `Play Force Feedback Effect`, `Client Play
+Force Feedback` and Enhanced Input's force feedback effects drive them exactly as they drive an Xbox pad,
+so authored effects with curves, falloff and looping work, and one code path serves every gamepad. Nothing
+to enable.
 
-Use the direct node for the three things force feedback cannot do, all of them because it is aimed at a *player* rather than a controller: rumbling **one specific controller** (a joined Joy-Con pair is one player but two controllers, so only this can buzz just the left one); rumbling a controller **not assigned to any player**, which is what a controller-assignment screen needs for "press here and feel which controller this is" before players exist; and holding a constant intensity without authoring a looping asset.
+The channels map the way Unreal's XInput interface reads them: `LeftLarge` drives the heavy,
+low-frequency motor and `RightSmall` the light, high-frequency one. An effect is aimed at a *player*, so
+both halves of a joined Joy-Con pair rumble together. `Force Feedback Scale` and `b Force Feedback
+Enabled` on the PlayerController apply as usual.
 
-The two are independent — a force feedback effect plays over a rumble you set directly, and neither cancels the other. Each motor runs at whichever of the two is stronger.
+### Direct rumble — one controller
 
-Per controller family:
+**JSL4U Set Controller Rumble** (`ConnectionId`, `SmallRumble`, `BigRumble`) sets each motor from 0 to 1;
+`(0, 0)` stops it. Use it for what force feedback cannot do, because force feedback is aimed at a player
+rather than a controller:
 
-- **DualShock 4 / DualSense**: small and big motor intensities.
-- **Joy-Cons / Pro Controller (Switch 1)**: full HD-rumble amplitude control — `BigRumble` drives the low-frequency component (heavy shake), `SmallRumble` the high-frequency one (fine buzz). The vibration is sustained automatically until you set `(0, 0)`.
-- **Switch 2 Pro Controller**: full HD-rumble amplitude control, the same as the Switch 1 — `BigRumble` drives the low-frequency component, `SmallRumble` the high-frequency one, and the vibration is sustained until you set `(0, 0)`. Each packet carries about 15ms of waveform, so the plug-in feeds the controller continuously while a rumble is held. Works over both USB and Bluetooth.
-- Note: close Steam when using the Switch 2 Pro Controller with Unreal — Steam holds the controller's USB command interface exclusively, which blocks the plugin's init and rumble (the plugin logs a warning and re-acquires the interface automatically once Steam is closed). Rumble also has an HID fallback that works without that interface, and Bluetooth is unaffected either way.
+- rumbling **one specific controller** — only the left half of a joined pair, say;
+- rumbling a controller **not assigned to any player**, so an assignment screen can say "feel which
+  controller this is" before players exist;
+- holding a constant intensity without authoring a looping asset.
 
-## Lights and player indicators
+The two ways are independent: each motor runs at whichever of the two is stronger, and neither cancels
+the other. Both reach the same maximum, so an effect that feels weak is a weak curve in the asset, not a
+limit here. **Stop All Controller Rumble**, on the JoyShock Subsystem, stops every controller at once, and
+runs by itself when the game shuts down.
 
-![Controllers Events](../Images/NintendoPlayerLed.png)
+### Per controller
 
-**Player indicators follow Unreal assignment automatically.** Joy-Cons, Switch Pro and Switch 2 Pro
-Controllers use Nintendo's distinct player patterns (including combination patterns for players 5-8),
-and joined Joy-Con halves show the same player. DualSense uses its five native player patterns. Calling
-**JSL4U Set Player Indicator** manually overrides the displayed one-based number until the next controller
-assignment change.
+| Controller | Rumble | Worth knowing |
+|---|---|---|
+| DualShock 4, DualSense | Two motors, small and big | |
+| Joy-Con, Pro Controller | HD rumble: `BigRumble` is the low-frequency component (heavy shake), `SmallRumble` the high-frequency one (fine buzz) | Sustained until you set `(0, 0)` |
+| Pro Controller 2, Joy-Con 2 | HD rumble, the same split | Sustained until `(0, 0)`, over USB and Bluetooth. Close Steam for it over USB — see [Conflicts](#conflicts-with-other-applications) |
 
-Nintendo's blue HOME-button light is a notification light, not a player number. Controllers can retain
-that light from firmware or a previous host, so JSL4U clears it on Joy-Con R and Switch Pro after their
-input stream starts, using Nintendo's explicit zero-brightness pattern; assignment uses only the four green
-player LEDs. A game that wants that light as a feedback channel can take it with **JSL4U Set Home Light**,
-after which the plugin stops clearing it on that controller for the rest of the connection. Before the game
-or editor process opens, the plugin is not running and cannot change a controller's retained/default LED
-state. Switch 2 Pro initialization likewise preserves its current indicator until Unreal assigns its actual
-Local Player, instead of briefly turning every player LED off.
+## Lights
 
-DualShock 4 has no numeric player LEDs, so **Set Player Indicator** intentionally does nothing on it. To
-test its RGB light bar, call **JSL4U Set Light Color** with its `ConnectionId` and an obvious color such as
-magenta. The light bar and rumble are separate fields in the same output report, so a broken rumble motor
-does not by itself prevent the color test.
+![Nintendo player LED patterns](../Images/NintendoPlayerLed.png)
+
+| Controller | Player indicator | Colour light | HOME light |
+|---|---|---|---|
+| Joy-Con, Pro Controller | Four LEDs, Nintendo's patterns for players 1-8 | — | Joy-Con R and Pro Controller |
+| Pro Controller 2, Joy-Con 2 | Four LEDs, the same patterns | — | — |
+| DualSense | Its five native player patterns | Light bar | — |
+| DualShock 4 | — | Light bar | — |
+
+**The player indicator follows Unreal's assignment by itself,** and both halves of a joined pair show the
+same player. **JSL4U Set Player Indicator** overrides the number shown until the next assignment change. On
+a DualShock 4, which has no numeric indicator, it does nothing.
+
+**JSL4U Set Light Color** sets the DualShock 4 and DualSense light bar.
+
+**The HOME light** is Nintendo's blue notification light, not a player number. A controller can keep it lit
+from firmware or a previous console, so the plugin switches it off once each connection starts. A game
+that wants it as a feedback channel takes it with **JSL4U Set Home Light**, and from then on the plugin
+leaves it alone on that controller.
 
 ## Conflicts with other applications
 
-Steam Input, DS4Windows and similar tools can hold a controller's output path while input keeps flowing,
-so rumble or player LEDs stop working with nothing to explain why. **Wait For Controller Function Blocked**
-fires when an output write is rejected while the controller is still delivering input, naming which
-capability is affected: `Rumble`, `Player Indicator`, `Home Light` or `Motion Sensor`. It fires once per
-function until that function works again, and only when the game actually uses it.
+Steam Input, DS4Windows and similar tools can hold a controller's output while input keeps flowing, so
+rumble or player LEDs stop working with nothing to explain why. **Wait For Controller Function Blocked**
+fires when an output is rejected while the controller is still delivering input, naming what is affected:
+`Rumble`, `Player Indicator`, `Home Light` or `Motion Sensor`. It fires once per function until that function
+works again, and only when the game actually uses it.
 
-Only failures the OS reports are detectable this way. An application that swallows output without failing
-the write cannot be distinguished from one that is not running.
+Only failures the system reports can be detected this way. An application that swallows output without
+failing the write cannot be told apart from one that is not running.
+
+**Steam and the Pro Controller 2 over USB.** Steam holds the controller's USB command interface for itself,
+which blocks the plugin's set-up and rumble. Close Steam while using it; the plugin logs a warning and takes
+the interface back once Steam closes. Rumble also has a fallback that works without that interface, and
+Bluetooth is not affected.

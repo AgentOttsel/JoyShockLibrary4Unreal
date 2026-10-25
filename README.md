@@ -33,6 +33,11 @@ for a `JSL4U*` node when you want something only these controllers can do.
 - **Xbox and other XInput pads** stay with Unreal; the plugin coexists with them and respects the player
   slots they hold.
 
+Over Bluetooth, the PlayStation and Switch 1 controllers are paired in Windows' Bluetooth settings, like
+any gamepad. The Switch 2 controllers are not: Windows has no native support for them, so the plugin finds
+and connects them itself — do not pair them in Windows. See
+[docs/switch2.md](docs/switch2.md#why-bluetooth-works-differently-here).
+
 What has been tested on each, and whom to ask for a test, is in [docs/hardware.md](docs/hardware.md).
 
 ## Installation

@@ -33,6 +33,11 @@ controle é de qual jogador. Escreva o jogo com as APIs da engine e ele aceita q
 - **Xbox e outros controles XInput** continuam com a Unreal; o plugin convive com eles e respeita os
   lugares de jogador que eles ocupam.
 
+Por Bluetooth, os controles de PlayStation e do Switch 1 são pareados nas configurações de Bluetooth do
+Windows, como qualquer gamepad. Os do Switch 2 não: o Windows não tem suporte nativo a eles, então o plugin
+os encontra e conecta sozinho — não pareie no Windows. Veja
+[docs/switch2.md](docs/switch2.md#why-bluetooth-works-differently-here).
+
 O que já foi testado em cada um, e com quem pedir teste, está em
 [docs/hardware.md](docs/hardware.md).
 

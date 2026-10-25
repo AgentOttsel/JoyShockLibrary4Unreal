@@ -1,55 +1,71 @@
 # Motion and gyro
 
-Motion is reported through **Unreal's own motion input**, the same path a phone's gyro and accelerometer use. That means `Tilt`, `RotationRate`, `Gravity` and `Acceleration` can be bound in Enhanced Input like any other axis, with no plugin-specific Blueprint code — `RotationRate` is the one you want for gyro aiming. The direct getters (`JSL4U Get IMU State`, `JSL4U Get Motion State`) are still there and use the same axes, so you can mix the two freely.
+Every controller this plugin drives has a gyroscope and an accelerometer. An Xbox pad has neither and
+reads zero; check **Has Motion Sensors** on the controller info before offering a motion feature.
 
-`JSL4U Get Motion State` returns a gravity-corrected orientation, so pitch and roll are absolute — they
-stay anchored to real-world down rather than accumulating error. Yaw still drifts, as it must without a
-magnetic or visual reference, which is what makes a "recentre" action worth offering in a game that maps
-absolute orientation to anything.
+## Binding motion
 
-**JSL4U Set Gyro Space** chooses the frame of reference gyro input is reported in — *Local Space* (raw,
-relative to the controller), *World Space* (corrected by the measured gravity direction, so yaw is always
-around the real vertical), or *Player Space* (a blend that is as adaptive as world space and as robust as
-local space). Player Space is the usual choice for gyro aiming, and is worth exposing as a player
-preference in a game that aims with gyro.
+Motion arrives through **Unreal's own motion input**, the same path a phone's sensors use, so Enhanced
+Input binds it like any other axis, with no plugin-specific Blueprint code:
+
+| Unreal key | What it measures | Typical use |
+|---|---|---|
+| **Rotation Rate** | How fast the controller is turning | Gyro aiming and camera |
+| **Tilt** | The controller's orientation, in radians | Steering, balancing, tilting a level |
+| **Gravity** | Which way is down, as the controller sees it | Telling how the controller is held |
+| **Acceleration** | The accelerometer's reading, gravity included | Shakes, swings, flicks |
+
+The direct nodes — **JSL4U Get IMU State**, **JSL4U Get Motion State** — use the same axes, so the two
+can be mixed freely. They also read a controller before it belongs to any player, which suits a
+calibration screen.
+
+Pitch and roll from **Get Motion State** are absolute: they stay anchored to real-world down. Yaw drifts
+slowly, as it must without a magnetic or visual reference, which is why a game that maps absolute
+orientation to anything should offer a "recentre" action.
+
+## Gyro space
+
+**JSL4U Set Gyro Space** chooses the frame gyro input is reported in:
+
+| Space | What it does | When to use it |
+|---|---|---|
+| **Player Space** | A blend: as adaptive as World Space and as robust as Local Space | Gyro aiming — the usual choice |
+| **World Space** | Corrected by the measured gravity, so yaw is always around the real vertical | When yaw must turn around the real vertical, however the controller is held |
+| **Local Space** | Raw, relative to the controller itself | When you want the untouched reading |
+
+In a game that aims with gyro, the space is worth exposing as a player preference.
 
 ## Sideways Joy-Cons
 
-A solo Joy-Con's stick and buttons are turned for horizontal play (see
-[Input](input.md#sideways-joy-cons)), and its motion is rotated with them. A Joy-Con held sideways is the same hardware turned a quarter turn about
-the axis out of its face, and its IMU does not know that: without correction, pointing the far end of a
-sideways Joy-Con up arrives as *roll*, and the pitch a game reads never moves. The plugin takes that quarter turn out of orientation,
-gravity, acceleration and local-space gyro, so `Pitch` means pitch and `Yaw` means yaw in either grip —
-through the direct getters and through Enhanced Input's motion keys alike, which apply the same rotation.
-World- and player-space gyro are left alone: those are already resolved against gravity and so are
-grip-independent by construction. Joining two halves returns both to the vertical presentation and the
-rotation disappears with it.
+A Joy-Con held sideways is the same hardware turned a quarter turn, and its sensor does not know that:
+uncorrected, tilting the far end up would read as *roll*. The plugin takes that quarter turn out of
+orientation, gravity, acceleration and local-space gyro, through Enhanced Input and the direct nodes
+alike, so `Pitch` means pitch in either grip. World and Player Space need no correction, since they are
+already resolved against gravity. A joined pair is upright, so nothing is turned.
 
-There is one place this shows: a mesh driven straight from `Get Motion State` draws a sideways Joy-Con
-upright, because upright is the pose its input is being reported in. That is deliberate — the reading
-describes how the controller is being *played*, not how it is lying — and it is the same answer for every
-controller, so nothing in a project needs a Joy-Con special case.
+What this shows: a 3D model driven straight from **Get Motion State** draws a sideways Joy-Con upright.
+That is deliberate — the reading describes how the controller is being *played*, not how it is lying —
+so nothing in a project needs a Joy-Con special case.
 
 ## Gyro calibration
 
-A gyroscope reports a small non-zero rotation even when perfectly still, so a controller left alone slowly drifts. Calibrating measures that offset while the controller is still and subtracts it. Nodes live under **JoyShock Library | Gyro Calibration**.
+A gyroscope reports a small rotation even when perfectly still, so an uncalibrated controller slowly
+drifts. Calibrating measures that offset while the controller is still and subtracts it.
 
-**Most games need none of them.** Every controller starts in *Automatic*, which works out for itself when
-the controller is being held still and keeps the offset current. Calibration is handled unless you decide
-otherwise, and **JSL4U Set Gyro Calibration Mode** exists to opt out with *Manual*.
+| If the game wants… | Do this |
+|---|---|
+| Nothing special | Nothing. Every controller starts in **Automatic**, which notices when the controller is held still and keeps the offset current |
+| A "Recalibrate gyro" button | **JSL4U Reset Gyro Calibration**. An offset measured while the controller was moving is worse than none, and this is the way out — worth offering even in Automatic |
+| Its own calibration screen | **JSL4U Set Gyro Calibration Mode** to *Manual*, then **JSL4U Start Manual Gyro Calibration** and **Stop** while the controller sits still, with **JSL4U Get Gyro Calibration Status** driving the prompts |
+| To spare a returning player a fresh calibration | **JSL4U Get Gyro Calibration Offset** to save it per controller, **JSL4U Set Gyro Calibration Offset** to restore it next session |
 
-The rest exist for games that want an explicit calibration screen:
+The status fields are easy to misread:
 
-- **JSL4U Start / Stop Manual Gyro Calibration** — gather samples for the drift offset while the controller sits still, then stop. Only meaningful in Manual mode.
-- **JSL4U Reset Gyro Calibration** — throw the current offset away and start over. This is the one manual node worth exposing to players even in Automatic mode, because an offset measured while the controller was moving leaves the gyro worse off than no calibration at all, and this is the way out. It suits a "Recalibrate gyro" button.
-- **JSL4U Get Gyro Calibration Status** — what drives a calibration screen's prompts and progress.
-- **JSL4U Get / Set Gyro Calibration Offset** — read the offset as a **Vector** to save it per controller and restore it next session, so a returning player doesn't have to calibrate again. These use the same axes as *JSL4U Get IMU State*.
+| Field | What it means |
+|---|---|
+| **Auto Calibration Confidence** | Only ever climbs: "this controller was measured well at some point", not a live reading |
+| **Auto Calibration Sampling Now** | True only while the automatic calibrator is taking samples. Not "the controller is still": one lying on a desk often reads false once calibration has settled |
+| **Manual Calibration Running** | True between Start and Stop |
 
-The status struct's three fields are easy to misread, so they are named after the mechanism they belong
-to. **Auto Calibration Confidence** only ever climbs: it is a high-water mark meaning "this controller was
-measured well at some point", not a live reading. **Auto Calibration Sampling Now** is the automatic
-calibrator's own gate, true only while it is taking samples — it is *not* a general "the controller is
-still" reading, and a controller lying untouched on a desk commonly reports false once the calibrator has
-settled. **Manual Calibration Running** is the manual counterpart, true between Start and Stop. For a
-genuine "is it moving right now" readout, compare the length of the gyro vector from *Get IMU State*
-against a small threshold.
+For a real "is it moving right now", compare the length of the gyro vector from **Get IMU State** against
+a small threshold.

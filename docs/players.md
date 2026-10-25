@@ -1,66 +1,87 @@
 # Players and local multiplayer
 
-Player slots are **stable**: a controller keeps its slot for as long as it stays connected, and a disconnect leaves that slot as a hole rather than shifting the others down — so if the player 1 controller drops mid-match, players 2 and 3 stay on their own characters instead of shuffling. The hole is reused by the next controller to connect. 4 solo-horizontal Joy-Cons = 4 players; two joined vertical pairs = 2 players. Joins dissolve automatically if one of the Joy-Cons disconnects.
+How to create the players themselves is in [Getting started](getting-started.md#level-3-local-multiplayer).
+This page is about which controller ends up on which player.
 
-Slots already taken by an **XInput pad** are skipped, so these controllers land where a second Xbox pad would have. Plug in an Xbox controller and a DualShock 4 and you get player 1 and player 2, the same as plugging in two Xbox controllers — a game does not need one assignment scheme for XInput and another for this plugin. (The flip side of matching XInput is that you inherit its behaviour: in a single-player game the second controller drives a player that does not exist, exactly as a second Xbox pad would.)
+## Player slots
 
-Slots otherwise follow the order controllers were switched on, and a controller that connected second stays on slot 1 even once it is the only one left — which in a single-player game means its input goes to a player that does not exist. Use **JSL4U Assign Controller To Player Index** to decide this yourself rather than inheriting connection order; it is the only thing that overrides it.
+- **A controller keeps its slot for as long as it stays connected.** A disconnect leaves a hole instead of
+  shifting the others down, so if player 1's controller drops mid-match, players 2 and 3 stay on their own
+  characters. The next controller to connect fills the hole.
+- **Slots follow the order controllers were switched on.** A controller that connected second stays on
+  slot 1 even once it is the only one left — which in a single-player game means its input goes to a
+  player that does not exist. **JSL4U Assign Controller To Player Index** is the only thing that overrides
+  this.
+- **Slots held by an XInput pad are skipped,** so these controllers land where a second Xbox pad would.
+  An Xbox pad and a DualShock 4 give players 1 and 2, the same as two Xbox pads — one assignment scheme for
+  both. The flip side is XInput's own behaviour: in a single-player game, the second controller drives a
+  player that does not exist, exactly as a second Xbox pad would.
+- **A slot can be shared.** Assign two, three or four controllers to the same slot and they all drive that
+  player — a DualSense and a Pro Controller on one slot both move the same Pawn. A joined Joy-Con pair is
+  the case the plugin performs for you.
 
-**Slots may be shared, and that is how any set of controllers drives one player.** Assign two, three or four controllers to the same slot and they all drive that player — a joined Joy-Con pair is simply the case the plugin performs for you, complete with the vertical stick/button split. Nothing is limited to Joy-Cons: a DualSense and a Pro Controller on one slot both move the same Pawn.
+Four solo Joy-Cons make four players; two joined pairs make two. A join dissolves by itself if either half
+disconnects.
+
+### Assignment nodes
+
+| Node | What it does |
+|---|---|
+| **JSL4U Assign Controller To Player Index** | Puts a controller on a chosen slot; -1 hands it back to automatic assignment. Works for XInput pads too |
+| **JSL4U Assign Controller To Player** | The same, addressed by Player Controller |
+| **JSL4U Get Controllers Assigned To Player** | Every controller feeding a player, XInput pads included. Takes the generic `Controller`, so a Pawn's Possessed event plugs straight in. Two entries for a joined pair |
+| **Ensure Local Player For Controller** (subsystem) | Reuses or creates the controller's Local Player and returns its Player Controller |
+
+There is no node for reading a slot back: every controller info already carries **Player Index**, for
+XInput pads as readily as for ours.
 
 ## More than four players
 
-Unreal caps the number of local players at **4** by default, and a fifth controller silently gets no
-player: it connects, it is reported here, it is given player slot 4, and `Create Player` refuses it. The
-number lives on the game viewport under the name `MaxSplitscreenPlayers`, which is a misnomer worth
-knowing about — it caps `Create Player` whether or not the screen is ever split, and it is still enforced
-with **Set Force Disable Splitscreen** on. Splitscreen stops at four because four is as many views as fit
-on a television; that is a rendering limit and says nothing about how many people are playing.
+Unreal caps local players at **4** by default, and a fifth controller silently gets no player: it
+connects, is reported, is given slot 4, and `Create Player` refuses it. The cap lives on the game viewport
+as `MaxSplitscreenPlayers` — a misleading name, since it caps `Create Player` whether or not the screen is
+ever split, even with **Set Force Disable Splitscreen** on.
 
-There are two ways to raise it, and both change the same value. Unreal's own is `MaxSplitscreenPlayers`
-in the project's `Config/DefaultEngine.ini` (see [Getting started](getting-started.md)). This plugin's is
-**JSL4U Set Max Local Players**, called from `BeginPlay` before creating any player, which keeps the limit
-in the Blueprint that creates the players. **JSL4U Get Max Local Players** reads it back.
+There are two ways to raise it, and both change the same value:
 
-Assignment nodes are under **JoyShock Library | Controller Assignment**:
+| Way | How |
+|---|---|
+| Unreal's own | `MaxSplitscreenPlayers` in the project's `Config/DefaultEngine.ini`, below |
+| This plugin's | **JSL4U Set Max Local Players**, from `BeginPlay`, before creating any player. Keeps the limit in the Blueprint that creates the players. **JSL4U Get Max Local Players** reads it back |
 
-- **JSL4U Set Max Local Players / JSL4U Get Max Local Players** — the ceiling on `Create Player`, above.
-- Reading the slot back has no node of its own: every controller info already carries **Player Index**, so breaking the struct any node hands you — or **JSL4U Get Controller Info** — answers it, for XInput pads as readily as for ours.
-- **JSL4U Assign Controller To Player Index (Controller, Player Index)** — puts a controller on a chosen player slot. Pass -1 to hand it back to automatic assignment. Works for XInput pads too.
-- **JSL4U Assign Controller To Player (Controller, Player Controller)** — the same thing addressed by **PlayerController** instead of slot number.
-- **JSL4U Get Controllers Assigned To Player** — every controller feeding a player, XInput pads included, taking the generic `Controller` type so a Pawn's `Possessed` event plugs straight in. Two entries for a joined pair.
-- **Ensure Local Player For Controller** (on the JoyShock Subsystem) — the high-level local-multiplayer path: reuse or create the correct Local Player from the controller's native Platform User, return its PlayerController, and reconcile the engine device mapper.
+```ini
+[/Script/Engine.GameViewportClient]
+MaxSplitscreenPlayers=6
+```
+
+Either way, place as many `PlayerStart` actors as the players you allow.
 
 ## Combining Joy-Cons into one player
 
-A left+right Joy-Con pair can act as a single vertical controller for one player. Grip changes follow the
-Switch convention globally:
+A left and a right Joy-Con can act as one upright controller for one player. Grip changes follow the
+Switch convention:
 
-- A Joy-Con connected by itself starts as a solo-horizontal controller.
-- Press **SL + SR** on either half of a joined pair to separate both halves; each becomes horizontal.
-- On two separated halves, hold **L or ZL** on the left and **R or ZR** on the right at the same time to
-  join them as one vertical controller. For example, **ZL + ZR** is sufficient. The outer buttons are
-  registration input and are suppressed until released, so the join does not also fire gameplay actions.
-- When several left/right halves perform the chord in the same frame, device-id order pairs them
-  deterministically.
+| To | Do |
+|---|---|
+| Use a Joy-Con alone | Nothing: a Joy-Con connected by itself starts sideways, as its own controller |
+| Join two halves | Hold **L or ZL** on the left and **R or ZR** on the right at the same time — **ZL + ZR** is enough. These buttons are held back until released, so the join does not also fire gameplay actions |
+| Separate a pair | Press **SL + SR** on either half; both become sideways controllers again |
 
-Pairing nodes are under **JoyShock Library | Joy-Con Pairing**:
+When several pairs do the chord in the same frame, device-id order pairs them, the same way every time.
+Both generations of Joy-Con join the same way.
 
-![Controllers Events](../Images/Joy-ConPairing.png)
+![Joy-Con pairing nodes](../Images/Joy-ConPairing.png)
 
-- **JSL4U Get Joy-Con Pair** — given either half, returns whether it is a pair plus both halves' identities. `Primary` names the same half no matter which one was asked, which is what lets an actor act  on a pair   without first working out which half it is attached to.
-- **JSL4U Get Joy-Con Partner** — whether this half is joined right now, and to which Connection Id.
-- **JSL4U Is Controller Type Joinable** — whether a controller type can be joined into a pair (currently the left and right Joy-Cons). `JSL4U Join Joy-Cons` validates with this same function.
-- **JSL4U Is Joy-Con Primary** — whether this device is the one representing its logical controller. True
-  for any standalone controller of any type, and for exactly one half of a joined pair.
-- **JSL4U Join Joy-Cons (A, B)** — joins a left and a right Joy-Con so they feed a single player and sets both vertical (left half = left stick and its buttons, right half = right stick and its buttons).
-- **JSL4U Set Joy-Con Grip Mode** — explicit per-device override. Standalone defaults to Horizontal; set
-  Vertical for exceptional games that intentionally use one upright half, such as Just Dance. Setting
-  Horizontal on a joined half separates the pair.
- - **JSL4U Unjoin Joy-Con / JSL4U Unjoin All Joy-Cons** — dissolve joins and return each half to horizontal presentation.
+| Node | What it does |
+|---|---|
+| **JSL4U Join Joy-Cons** (A, B) | Joins a left and a right Joy-Con into one upright controller: the left half is the left stick and its buttons, the right half the right stick and its buttons |
+| **JSL4U Unjoin Joy-Con** / **JSL4U Unjoin All Joy-Cons** | Separate one pair, or all of them; each half goes back to sideways |
+| **JSL4U Set Joy-Con Grip Mode** | Horizontal or Vertical for one half. Vertical suits a game that uses one upright half, such as Just Dance; Horizontal on a joined half separates the pair |
+| **JSL4U Get Joy-Con Pair** | From either half: whether it is joined, and both halves' infos, Primary first |
+| **JSL4U Get Joy-Con Partner** | Whether this half is joined right now, and to which `ConnectionId` |
+| **JSL4U Is Joy-Con Primary** | Whether this device represents its logical controller — always for a standalone one, for exactly one half of a pair |
+| **JSL4U Is Controller Type Joinable** | Whether a controller type can be joined; Join Joy-Cons checks with this same function |
 
-
-
-`Primary` identifies a *device*, not a *side*: which half leads depends on connection order, so a pair's
+`Primary` names a *device*, not a *side*: which half leads depends on connection order, so a pair's
 primary may be the right Joy-Con. Read `Controller Type` on the returned infos when something has to land
-on a specific physical half.
+on a specific half.

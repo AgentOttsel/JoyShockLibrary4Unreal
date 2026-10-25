@@ -7,82 +7,89 @@ editor they are usually ready before the level loads, in a packaged game they us
 Bluetooth controller may arrive minutes in. Code that only handles "already connected" works on the
 machine it was written on and nowhere else.
 
-The **Wait For…** nodes remove that distinction. Each is a single latent node whose event pins carry their
-payload as ordinary data pins — no Create Event, no Bind Event, no matching custom-event signatures:
+## The Wait For… nodes
 
-- **Wait For Controller Changes** — `On Connected` fires immediately for every controller already
-  connected and then for each new one, so there is no window in which a controller can be missed;
-  `On Disconnected` reports the last known identity and whether reports simply stopped.
-- **Wait For Any Controller Changes** — the same two pins, but for **every controller Unreal accepts**,
-  including Xbox pads and everything else arriving through XInput. Use this one to decide when a *player*
-  joins or leaves, and the JSL4U-only node above when you specifically need gyro, touchpad, lights or HD
-  rumble. Both report the same `FJSL4UControllerInfo`; `bIsJoyShockController` says which kind arrived, and
-  a controller the plugin does not drive reports the capability flags of its own hardware -- false for the
-  gyro it does not have, true for the rumble it does. You rarely need to ask which kind arrived: every
-  node takes the payload's `ConnectionId`, whichever kind it is. Keyboard and mouse are not reported: they share
-  one device that is connected from the first frame, so announcing it would spawn a player before anyone
-  touched anything.
-- **Wait For Joy-Con Pairing Changes** — `On Joined` / `On Separated`, with both halves' identities
-  already carrying their new grip mode, join partner and player assignment. Pairing actions are not
-  replayed, because they are actions rather than persistent state; read **JSL4U Get Connected Controllers**
-  when initial setup also needs the current pairing.
-- **Wait For Battery Changes** — `On Low Battery` and `On Charging Changed`. See [Battery](#battery) below.
-- **Wait For Controller Function Blocked** — see [Conflicts with other applications](output.md#conflicts-with-other-applications).
+Each is a single latent node whose event pins carry their payload as ordinary data pins — no Create
+Event, no Bind Event, no matching custom-event signatures.
 
-Because `On Connected` already replays, do **not** add a separate `For Each` over
-**JSL4U Get Connected Controllers** alongside it; doing both processes every existing controller twice.
+| Node | Pins | What to know |
+|---|---|---|
+| **Wait For Controller Changes** | On Connected, On Disconnected | This plugin's controllers. On Connected fires at once for every controller already connected, then for each new one, so none can be missed. On Disconnected reports the last known identity and whether reports simply stopped |
+| **Wait For Any Controller Changes** | On Connected, On Disconnected | **Every controller Unreal accepts**, Xbox and other XInput pads included. Use it to decide when a *player* joins or leaves. Keyboard and mouse are not reported: they are connected from the first frame, and announcing them would spawn a player before anyone touched anything |
+| **Wait For Joy-Con Pairing Changes** | On Joined, On Separated | Both halves' identities, already carrying the new grip, partner and player. Not replayed — joins are actions, not state — so read **JSL4U Get Connected Controllers** for the current pairing at start-up |
+| **Wait For Battery Changes** | On Low Battery, On Charging Changed | See [Battery](#battery) |
+| **Wait For Controller Function Blocked** | On Blocked | See [Conflicts with other applications](output.md#conflicts-with-other-applications) |
 
-Each node's `Async Action` output accepts **Cancel**, which is how a widget stops listening when it is
-removed. `Remove From Parent` does not unbind anything on its own, so a widget that keeps listening after
-being removed will keep running its handler against a half-dismantled state.
+Both connection nodes report the same `FJSL4UControllerInfo`; `bIsJoyShockController` says which kind
+arrived, and a controller the plugin does not drive reports its own hardware's capability flags — false
+for the gyro it lacks, true for the rumble it has. You rarely need to ask: every node takes the payload's
+`ConnectionId`, whichever kind it is.
 
-The same events are also available as assignable delegates on the **JoyShock Subsystem**, for C++ and for
-Blueprints that prefer that style. If you use those directly, get the subsystem from a `BeginPlay` — not
-from a Game Instance's `Init`, because subsystems are created at the very end of `Init` and the events
-would silently never fire.
+Three things that go wrong:
 
-`FJSL4UControllerInfo` includes two different identities:
+- **Do not also loop over Get Connected Controllers.** On Connected already replays, so a `For Each`
+  alongside it handles every existing controller twice.
+- **Cancel the node when its widget goes away.** Each node's `Async Action` output accepts **Cancel**.
+  `Remove From Parent` unbinds nothing, so a removed widget keeps running its handler against a
+  half-dismantled state.
+- **Subsystem delegates: bind from a `BeginPlay`.** The same events exist as assignable delegates on the
+  **JoyShock Subsystem**, for C++ or for Blueprints that prefer binding. Get the subsystem from a
+  `BeginPlay`, not from a Game Instance's `Init`: subsystems are created at the very end of `Init`, and
+  the events would silently never fire.
 
-- `ConnectionId` names the controller. It is the only address the plugin's nodes take, it is not reused during the run, and it exists for every controller Unreal accepts -- positive for one this plugin drives, negative for one it does not. Use it as the key of maps that track spawned Pawns or handled connections.
-- `InputDeviceId` and `PlatformUserId` are Unreal's native identities, exposed as integers for Blueprint. `HardwareDeviceIdentifier` is the stable model name registered with the engine.
+## Identities
+
+| Field | What it is |
+|---|---|
+| `ConnectionId` | Names the controller, and is the only address the plugin's nodes take. Not reused during the run, and it exists for every controller Unreal accepts — positive for one this plugin drives, negative for one it does not. The key for maps of spawned Pawns or handled connections |
+| `InputDeviceId`, `PlatformUserId` | Unreal's native identities, as integers for Blueprint. `InputDeviceId` names one physical connection |
+| `HardwareDeviceIdentifier` | The model's stable name — see [Model identifiers](#model-identifiers) |
+
+Do not keep `InputDeviceId` or `ConnectionId` between game runs.
 
 ## One address, honest answers
 
-Every per-controller node takes a `ConnectionId` and accepts one for **any** controller, including the Xbox pads this plugin does not drive. A game does not branch on whose controller it is holding; it asks the controller for what it wants, and what comes back is the truth about that hardware:
+Every per-controller node takes a `ConnectionId` and accepts one for **any** controller, including the
+Xbox pads this plugin does not drive. A game does not branch on whose controller it holds; it asks for what
+it wants, and the answer is the truth about that hardware:
 
-- **Readings** — `Get IMU State`, `Get Motion State`, `Get Touch State` and friends return zeroes for hardware that has no such sensor. Check `Has Motion Sensors` / `Has Touchpad` on the controller info before believing (or offering) a reading of zero.
-- **Rumble** — works on every pad. For one of ours the plugin writes the motors over HID; for a foreign pad it routes through Unreal's own force-feedback channels. One caveat there: the engine rewrites those channels every frame for a pad that belongs to a player, so a direct value set on an **assigned** foreign pad survives about a frame. On an unassigned one — the assignment screen, "buzz this pad so you know which it is" — it stands. For rumble during play, on any pad, use Force Feedback.
-- **Everything else** (gyro calibration, light colour, player indicator, HOME light) does nothing on hardware that lacks it, and logs one warning naming the node and the connection. One warning per controller per node, not one per call, so a node sitting in a Tick cannot bury the log.
+| Asking for | On hardware without it |
+|---|---|
+| A reading — **Get IMU State**, **Get Motion State**, **Get Touch State** and the like | Zeroes. Check `Has Motion Sensors` / `Has Touchpad` before believing, or offering, a reading of zero |
+| Rumble | Works on every pad: over HID for one of ours, through Unreal's force-feedback channels for a foreign one. On a foreign pad *assigned to a player*, the engine rewrites those channels every frame, so a direct value lasts about a frame; on an unassigned one it stands. For rumble during play, use Force Feedback |
+| Anything else — gyro calibration, light colour, player indicator, HOME light | Nothing happens, and one warning names the node and the connection. One per controller per node, so a node in a Tick cannot bury the log |
 
-A stored `ConnectionId` whose controller has been unplugged resolves to nothing: the call fails or does nothing rather than landing on whichever controller connected next. That is the whole reason the nodes take this id and not the library's own handle, which *is* reused.
+A stored `ConnectionId` whose controller has been unplugged resolves to nothing: the call fails or does
+nothing rather than landing on whichever controller connected next.
 
 ## Battery
 
-`Controller Info` reports **Battery Level** and **Is Charging** for Joy-Cons, Switch Pro, DualShock 4 and
-DualSense, plus **Battery Percent** where the hardware measures one. **Wait For Battery Changes** turns
-those into events: `On Low Battery` fires once per episode and re-arms when the controller is charged or
-plugged in, and `On Charging Changed` reports the cable or dock going in and out.
+**Battery Level** and **Is Charging** are on every controller info. **Wait For Battery Changes** turns them
+into events: On Low Battery fires once per episode and re-arms when the controller is charged or plugged
+in, and On Charging Changed reports the cable or dock going in and out.
 
-Battery Level is a coarse enum — `Empty`, `Critical`, `Low`, `Medium`, `Full` — deliberately, not a
-percentage: a Switch 1 controller reports five states, so a percentage there would be invented precision,
-and a game written against a percentage misbehaves on exactly the controllers that cannot supply one.
-The PlayStation controllers and the Switch 2 fill Battery Percent; it is `-1` elsewhere and is meant for
-display, not for decisions. `Unknown` means the controller does not report charge at all, and is never a
-low battery.
+| Value | Meaning |
+|---|---|
+| **Battery Level** | `Empty`, `Critical`, `Low`, `Medium` or `Full`. Coarse on purpose: a Switch 1 controller reports only five states, so a percentage there would be invented precision. `Unknown` means the controller does not report charge, and is never a low battery |
+| **Battery Percent** | Filled by the PlayStation and Switch 2 controllers, `-1` elsewhere. For display, not decisions |
 
-A Switch 2 controller reports its battery as the cell's terminal **voltage** rather than as a charge, so
-its percentage is interpolated across a lithium cell's usable span (3.0 V empty to 4.2 V full). That is a
-straight line where the real discharge curve is not one, and voltage sags under load — a controller reads
-lower mid-rumble than it does at rest. Drive a bar from it, not a number. The measured voltage itself is
-available from **JSL4U Get Switch 2 Sensors** if you want the reading rather than the estimate.
+A Switch 2 controller reports its cell's **voltage**, not its charge, so its percentage is a straight line
+between 3.0 V empty and 4.2 V full, where the real discharge curve is not straight — and voltage sags
+under load, so it reads lower mid-rumble than at rest. Drive a bar from it, not a number. The voltage
+itself is on **JSL4U Get Switch 2 Sensors**.
 
 ## Model identifiers
 
-Every connection is registered with Unreal's `FInputDeviceRegistry`, and the plugin supplies the same `Config/Input.ini` hardware metadata pattern used by the engine's XInput and WinDualShock plugins. `UInputDeviceSubsystem` therefore sees these as standard **Gamepad** devices with stable identifiers:
+Every connection is registered with Unreal's `FInputDeviceRegistry`, with the same `Config/Input.ini`
+hardware metadata the engine's own XInput and WinDualShock plugins use. `UInputDeviceSubsystem` therefore
+sees these as standard **Gamepad** devices with stable identifiers:
 
-- `DualShock4`, `DualSense`
-- `JoyConLeft`, `JoyConRight`
-- `SwitchProController`, `Switch2ProController`
-- `JoyShockGamepad` as the unknown-device fallback
+| Identifier | Controller |
+|---|---|
+| `DualShock4`, `DualSense` | PlayStation |
+| `JoyConLeft`, `JoyConRight` | Joy-Con halves |
+| `JoyCon2Left`, `JoyCon2Right` | Joy-Con 2 halves |
+| `SwitchProController`, `Switch2ProController` | Pro Controller, Pro Controller 2 |
+| `JoyShockGamepad` | Fallback for a controller the plugin cannot identify |
 
-The identifier describes the model; `InputDeviceId` describes one physical connection. Do not parse the display name to identify hardware, and do not persist `InputDeviceId` or `ConnectionId` between game runs.
+Identify hardware by this identifier, never by parsing the display name.

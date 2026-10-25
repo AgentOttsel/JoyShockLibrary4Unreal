@@ -21,7 +21,7 @@ All of them show up in Enhanced Input's key picker under the **JoyShock** prefix
 | **JoyShock TouchPad 1 X-Axis** / **Y-Axis** | Axis1D | The same, one component at a time |
 | **JoyShock TouchPad 1 Touched** | button | Down while the first finger is on the pad |
 | **JoyShock TouchPad 2 …** | | The same four for the second finger |
-| **JoyShock Mouse L 2D-Axis (Switch 2)** / **Mouse R 2D-Axis (Switch 2)** | Axis2D | The mouse sensor under Joy-Con 2 L or R — see [Nintendo Switch 2 Joy-Con](switch2.md#nintendo-switch-2-joy-con) |
+| **JoyShock Mouse L 2D-Axis (Switch 2)** / **Mouse R 2D-Axis (Switch 2)** | Axis2D | The mouse sensor under Joy-Con 2 L or R — see [Nintendo Switch 2 Joy-Con](switch2.md#the-extra-sensors) |
 | **JoyShock Mouse L/R X-Axis** / **Y-Axis (Switch 2)** | Axis1D | The same, one component at a time |
 
 Motion is bound through Unreal's own motion keys rather than plugin keys; see [Motion and gyro](motion.md).
