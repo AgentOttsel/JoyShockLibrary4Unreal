@@ -1,4 +1,4 @@
-**Português** · [English](README.md) (versão anterior)
+**Português** · [English](README.md)
 
 # JoyShockLibrary4Unreal
 
