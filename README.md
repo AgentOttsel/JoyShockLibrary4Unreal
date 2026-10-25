@@ -65,9 +65,9 @@ controller. See [docs/demo.md](docs/demo.md).
 | [Hardware support](docs/hardware.md) | What has been tested on each controller, and who can test what |
 | [Getting started](docs/getting-started.md) | The three setup levels, step by step |
 | [Demo level](docs/demo.md) | How the demo level is put together |
-| [Input](docs/input.md) | Exclusive buttons, touchpad, sideways Joy-Cons, stick conventions |
+| [Input](docs/input.md) | Every key the plugin adds, sideways Joy-Cons, sticks, touchpad |
 | [Motion and gyro](docs/motion.md) | Motion through Enhanced Input, gyro space, calibration |
-| [Reacting to controllers](docs/controllers.md) | The **Wait For…** nodes, `ConnectionId`, and battery |
+| [Reacting to controllers](docs/controllers.md) | The **Wait For…** nodes, `ConnectionId`, battery and model identifiers |
 | [Players and local multiplayer](docs/players.md) | Player slots, more than four players, joining Joy-Cons |
 | [Rumble, lights and output](docs/output.md) | Rumble, lights, player indicator, conflicts with other applications |
 | [Nintendo Switch 2 controllers](docs/switch2.md) | Pro Controller 2 and Joy-Con 2, USB and Bluetooth, extra sensors |

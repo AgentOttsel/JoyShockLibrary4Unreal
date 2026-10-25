@@ -72,4 +72,9 @@ though little of it is unchanged now.
 - **A controller's identity is its MAC where one can be read, and its HID path otherwise.** That is what
   lets a controller keep its player slot across a reconnect, and what stops one controller reachable two
   ways from becoming two.
+- **A right stick's Y is normalised in exactly one place.** A whole controller (Pro Controller, Pro
+  Controller 2, DualShock 4, DualSense) is flipped in its parser, `InputHelpers.cpp`; a Joy-Con half only in
+  the interface, `ProcessAnalogInputs`, so the parser leaves a Joy-Con's `stickRY` alone. Two flips that each
+  look right cancel out, so check both places before touching either sign. The direct `JSL4U` getters keep
+  the hardware's own fields; only the keys Unreal sees are adapted.
 - **`UJoyShockLibrary` and the node names cannot be renamed.** Saved Blueprint graphs refer to them.

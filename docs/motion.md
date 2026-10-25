@@ -16,7 +16,7 @@ preference in a game that aims with gyro.
 ## Sideways Joy-Cons
 
 A solo Joy-Con's stick and buttons are turned for horizontal play (see
-[Input](input.md#joy-con-grips-and-stick-conventions)), and its motion is rotated with them. A Joy-Con held sideways is the same hardware turned a quarter turn about
+[Input](input.md#sideways-joy-cons)), and its motion is rotated with them. A Joy-Con held sideways is the same hardware turned a quarter turn about
 the axis out of its face, and its IMU does not know that: without correction, pointing the far end of a
 sideways Joy-Con up arrives as *roll*, and the pitch a game reads never moves. The plugin takes that quarter turn out of orientation,
 gravity, acceleration and local-space gyro, so `Pitch` means pitch and `Yaw` means yaw in either grip —

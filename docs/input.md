@@ -1,67 +1,73 @@
 # Input
 
-For inputs that have an XInput equivalent (e.g. face buttons, triggers and sticks), simply adding JoyShockLibrary4Unreal to your project and enabling it will make Unreal recognize those inputs automatically for any compatible controller, with no code changes required.
+Everything a standard gamepad has — face buttons, d-pad, shoulders, triggers, sticks — arrives as Unreal's
+own gamepad keys, with no setup (see [Getting started](getting-started.md#level-1-nothing)). This page
+covers what is left: the keys the plugin adds, and how a sideways Joy-Con maps onto a gamepad.
 
-For buttons that are exclusive to JoyShock inputs, new input events have been added:
+## Keys the plugin adds
 
-![JoyShock inputs](../Images/JoyShockExclusiveButtons.png)
+All of them show up in Enhanced Input's key picker under the **JoyShock** prefix.
 
-The Switch 2 Pro Controller's exclusive buttons also have their own input events: **JoyShock C Button (Switch 2)**, **JoyShock Grip Left GL (Switch 2)** and **JoyShock Grip Right GR (Switch 2)**.
+| Key | Type | Sent by |
+|---|---|---|
+| **JoyShock Home / PS Button** | button | PS on DualShock 4 and DualSense; HOME on Joy-Con R, Joy-Con 2 R, Pro Controller and Pro Controller 2 |
+| **JoyShock Capture / TouchPad Click** | button | The touchpad click on DualShock 4 and DualSense; Capture on Joy-Con L, Joy-Con 2 L, Pro Controller and Pro Controller 2 |
+| **JoyShock Mic Button** | button | The mute button on DualSense |
+| **JoyShock Side Left** / **JoyShock Side Right** | button | SL and SR on a Joy-Con held upright or joined; the back buttons on DualSense Edge |
+| **JoyShock Function Left** / **JoyShock Function Right** | button | The Fn buttons on DualSense Edge |
+| **JoyShock C Button (Switch 2)** | button | C on Pro Controller 2 and Joy-Con 2 R |
+| **JoyShock Grip Left GL (Switch 2)** / **JoyShock Grip Right GR (Switch 2)** | button | The rear grip buttons on Pro Controller 2 |
+| **JoyShock TouchPad 1 2D-Axis** | Axis2D | The first finger on the DualShock 4 or DualSense touchpad — see [Touchpad](#touchpad) |
+| **JoyShock TouchPad 1 X-Axis** / **Y-Axis** | Axis1D | The same, one component at a time |
+| **JoyShock TouchPad 1 Touched** | button | Down while the first finger is on the pad |
+| **JoyShock TouchPad 2 …** | | The same four for the second finger |
+| **JoyShock Mouse L 2D-Axis (Switch 2)** / **Mouse R 2D-Axis (Switch 2)** | Axis2D | The mouse sensor under Joy-Con 2 L or R — see [Nintendo Switch 2 Joy-Con](switch2.md#nintendo-switch-2-joy-con) |
+| **JoyShock Mouse L/R X-Axis** / **Y-Axis (Switch 2)** | Axis1D | The same, one component at a time |
 
-## Joy-Con grips and stick conventions
+Motion is bound through Unreal's own motion keys rather than plugin keys; see [Motion and gyro](motion.md).
 
-A standalone Joy-Con is presented in Nintendo's solo-horizontal grip: its stick is rotated into the
-physical horizontal orientation and exposed as Unreal's standard left stick; its four front buttons become
-positional face buttons; SL/SR become the standard left/right shoulders; and the inaccessible outer
-L/ZL or R/ZR buttons do not generate gameplay input. Its motion is turned the same way; see
-[Sideways Joy-Cons](motion.md#sideways-joy-cons).
+## Sideways Joy-Cons
 
-When a left and right half are joined they return to
-vertical presentation, with the left half supplying Unreal's left stick and the right half its right stick.
-Direct `JSL4U` state getters retain the native hardware fields; only engine-facing gamepad keys are adapted.
-In particular, the Joy-Con R's native inverted vertical stick axis is normalised before its horizontal or
-joined presentation, and DualShock 4 right-stick Y receives its engine-facing correction without changing
-the direct getter. Shared Enhanced Input modifiers such as **To World Space** therefore receive the same
-local X/Y convention from Joy-Cons, DualShock/DualSense and Pro Controllers; no per-device modifier is
-needed in the Mapping Context.
-Therefore a normal movement Mapping Context should bind only `Gamepad Left 2D` — do not also bind
-`Gamepad Right 2D` to movement, because that would make a full controller's camera stick and right-stick
-drift move the Pawn.
+A Joy-Con on its own is played sideways, the way the Switch presents it, and becomes a small gamepad with
+one stick:
+
+| On the Joy-Con | Unreal key |
+|---|---|
+| Stick | Gamepad Left Thumbstick |
+| Stick click | Gamepad Left Thumbstick Button |
+| The four front buttons | The four face buttons, by their position once the Joy-Con is sideways |
+| SL / SR | Gamepad Left Shoulder / Right Shoulder |
+| − / + | Gamepad Special Left / Special Right |
+| HOME / Capture | JoyShock Home / PS Button, JoyShock Capture / TouchPad Click |
+| L / ZL or R / ZR | Nothing — out of reach when held sideways, and kept for the join chord |
+
+Its motion is turned the same way; see [Sideways Joy-Cons](motion.md#sideways-joy-cons).
+
+A **joined pair** is presented upright, as one full controller: the left half supplies the left stick, the
+d-pad and its shoulders, the right half the right stick, the face buttons and its shoulders. SL and SR then
+arrive as **JoyShock Side Left** / **Side Right**. How to join and separate is in
+[Players and local multiplayer](players.md#combining-joy-cons-into-one-player).
+
+## Sticks
+
+Every controller reports its sticks with the same convention, so one Mapping Context serves them all:
+modifiers such as **To World Space** need no per-device variant.
+
+For movement, bind only **Gamepad Left 2D**. Binding **Gamepad Right 2D** to movement as well would let a
+full controller's camera stick, and its drift, move the Pawn.
+
+The direct `JSL4U` getters return the hardware's own readings; only the keys Unreal sees are adapted.
 
 ## Touchpad
 
 The DualShock 4 and DualSense touchpad is exposed as **gamepad axes**, not as screen touches, so Enhanced
-Input binds it exactly like a thumbstick:
-
-| Key | Type |
-| --- | --- |
-| **JoyShock TouchPad 1 2D-Axis** | Axis2D — one finger's position in a single Vector2D |
-| **JoyShock TouchPad 1 X-Axis** / **Y-Axis** | the components, if you want them separately |
-| **JoyShock TouchPad 1 Touched** | button — down while a finger is on the pad |
-| **JoyShock TouchPad 2 …** | the same four for the second finger |
-| **JoyShock Capture / TouchPad Click** | the physical click, which is a separate button on the hardware |
+Input binds it exactly like a thumbstick, with the keys in the table above.
 
 Values are centred like a stick: `(0, 0)` is the middle of the pad, X runs left to right and Y runs bottom
 to top, matching the sticks so a shared mapping (**To World Space** included) behaves the same on both. A
 finger that is not down reads `(0, 0)`, which is why **Touched** exists — a corner-relative `0..1` range
 could not tell "no finger" from "finger at the top-left corner".
 
-Unreal's built-in **Touch 1 … Touch 10** keys are *not* the ones to use here, even though they are the
-first place most people look. Those are touchscreen keys, fed by Slate's pointer pipeline, and a
-controller touchpad has no screen position to give them; worse, a synthesised pointer press moves that
-player's Slate focus to whatever widget it lands on, which takes their controller's input away from the
-game viewport entirely. A touchpad belongs to one player's gamepad, so it is registered as one.
-
-For games that genuinely want the pad driving Slate touch, `JoyShock.Touchpad.EmulateScreenTouch 1`
-restores that behaviour. It is off by default, for the reason above.
-
-## Native input-device metadata
-
-Every connection is registered with Unreal's `FInputDeviceRegistry`, and the plugin supplies the same `Config/Input.ini` hardware metadata pattern used by the engine's XInput and WinDualShock plugins. `UInputDeviceSubsystem` therefore sees these as standard **Gamepad** devices with stable identifiers:
-
-- `DualShock4`, `DualSense`
-- `JoyConLeft`, `JoyConRight`
-- `SwitchProController`, `Switch2ProController`
-- `JoyShockGamepad` as the unknown-device fallback
-
-The identifier describes the model; `InputDeviceId` describes one physical connection. Do not parse the display name to identify hardware, and do not persist `InputDeviceId` or `ConnectionId` between game runs.
+Do not use Unreal's **Touch 1 … Touch 10** keys for it. Those are for touchscreens, and a press on them
+moves that player's UI focus off the game viewport, taking their controller's input with it. For a game
+that genuinely wants the pad driving screen touch, `JoyShock.Touchpad.EmulateScreenTouch 1` turns that on.

@@ -75,3 +75,14 @@ its percentage is interpolated across a lithium cell's usable span (3.0 V empty 
 straight line where the real discharge curve is not one, and voltage sags under load — a controller reads
 lower mid-rumble than it does at rest. Drive a bar from it, not a number. The measured voltage itself is
 available from **JSL4U Get Switch 2 Sensors** if you want the reading rather than the estimate.
+
+## Model identifiers
+
+Every connection is registered with Unreal's `FInputDeviceRegistry`, and the plugin supplies the same `Config/Input.ini` hardware metadata pattern used by the engine's XInput and WinDualShock plugins. `UInputDeviceSubsystem` therefore sees these as standard **Gamepad** devices with stable identifiers:
+
+- `DualShock4`, `DualSense`
+- `JoyConLeft`, `JoyConRight`
+- `SwitchProController`, `Switch2ProController`
+- `JoyShockGamepad` as the unknown-device fallback
+
+The identifier describes the model; `InputDeviceId` describes one physical connection. Do not parse the display name to identify hardware, and do not persist `InputDeviceId` or `ConnectionId` between game runs.

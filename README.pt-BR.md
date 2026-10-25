@@ -68,9 +68,9 @@ As páginas detalhadas estão em inglês, menos a de primeiros passos.
 | [Hardware support](docs/hardware.md) | O que foi testado em cada controle, e quem pode testar o quê |
 | [Primeiros passos](docs/getting-started.pt-BR.md) | Os três níveis de configuração, passo a passo |
 | [Demo level](docs/demo.md) | Como a fase de demonstração é montada |
-| [Input](docs/input.md) | Botões exclusivos, touchpad, Joy-Con na horizontal, convenção dos sticks |
+| [Input](docs/input.md) | Todas as teclas que o plugin adiciona, Joy-Con na horizontal, sticks, touchpad |
 | [Motion and gyro](docs/motion.md) | Movimento pelo Enhanced Input, espaço do giroscópio, calibração |
-| [Reacting to controllers](docs/controllers.md) | Os nodes **Wait For…**, o `ConnectionId` e a bateria |
+| [Reacting to controllers](docs/controllers.md) | Os nodes **Wait For…**, o `ConnectionId`, a bateria e os identificadores de modelo |
 | [Players and local multiplayer](docs/players.md) | Lugares de jogador, mais de quatro jogadores, junção de Joy-Cons |
 | [Rumble, lights and output](docs/output.md) | Vibração, luzes, indicador de jogador, conflito com outros programas |
 | [Nintendo Switch 2 controllers](docs/switch2.md) | Pro Controller 2 e Joy-Con 2, USB e Bluetooth, sensores extras |
