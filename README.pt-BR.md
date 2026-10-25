@@ -54,19 +54,19 @@ Há três níveis, e a maioria dos projetos só precisa do primeiro:
    node **Wait For Controller Changes**.
 3. **Multiplayer local:** **Ensure Local Player For Controller** para cada controle que conecta.
 
-O passo a passo de cada nível está em [docs/getting-started.md](docs/getting-started.md).
+O passo a passo de cada nível está em [docs/getting-started.pt-BR.md](docs/getting-started.pt-BR.md).
 
 O plugin traz uma fase de demonstração, `LV_JoyShockDemo`, com multiplayer local e um espelho 3D de cada
 controle conectado. Veja [docs/demo.md](docs/demo.md).
 
 ## Documentação
 
-As páginas detalhadas estão em inglês.
+As páginas detalhadas estão em inglês, menos a de primeiros passos.
 
 | Página | O que tem |
 |---|---|
 | [Hardware support](docs/hardware.md) | O que foi testado em cada controle, e quem pode testar o quê |
-| [Getting started](docs/getting-started.md) | Os três níveis de configuração, mais de quatro jogadores e o PIE |
+| [Primeiros passos](docs/getting-started.pt-BR.md) | Os três níveis de configuração, passo a passo |
 | [Demo level](docs/demo.md) | Como a fase de demonstração é montada |
 | [Input](docs/input.md) | Botões exclusivos, touchpad, Joy-Con na horizontal, convenção dos sticks |
 | [Motion and gyro](docs/motion.md) | Movimento pelo Enhanced Input, espaço do giroscópio, calibração |
@@ -75,7 +75,7 @@ As páginas detalhadas estão em inglês.
 | [Rumble, lights and output](docs/output.md) | Vibração, luzes, indicador de jogador, conflito com outros programas |
 | [Nintendo Switch 2 controllers](docs/switch2.md) | Pro Controller 2 e Joy-Con 2, USB e Bluetooth, sensores extras |
 | [Blueprint nodes](docs/blueprint-nodes.md) | Como a API `JSL4U*` está organizada |
-| [Diagnostics and troubleshooting](docs/troubleshooting.md) | Comandos de diagnóstico e problemas conhecidos de Bluetooth |
+| [Diagnostics and troubleshooting](docs/troubleshooting.md) | Comandos de diagnóstico, problemas de Bluetooth e testes no editor |
 | [Source layout](docs/architecture.md) | Para quem vai mexer no código: as camadas, onde mudar o quê |
 
 ## Perguntas

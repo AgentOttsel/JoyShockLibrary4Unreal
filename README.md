@@ -63,7 +63,7 @@ controller. See [docs/demo.md](docs/demo.md).
 | Page | What it covers |
 |---|---|
 | [Hardware support](docs/hardware.md) | What has been tested on each controller, and who can test what |
-| [Getting started](docs/getting-started.md) | The three setup levels, more than four players, and PIE |
+| [Getting started](docs/getting-started.md) | The three setup levels, step by step |
 | [Demo level](docs/demo.md) | How the demo level is put together |
 | [Input](docs/input.md) | Exclusive buttons, touchpad, sideways Joy-Cons, stick conventions |
 | [Motion and gyro](docs/motion.md) | Motion through Enhanced Input, gyro space, calibration |
@@ -72,7 +72,7 @@ controller. See [docs/demo.md](docs/demo.md).
 | [Rumble, lights and output](docs/output.md) | Rumble, lights, player indicator, conflicts with other applications |
 | [Nintendo Switch 2 controllers](docs/switch2.md) | Pro Controller 2 and Joy-Con 2, USB and Bluetooth, extra sensors |
 | [Blueprint nodes](docs/blueprint-nodes.md) | How the `JSL4U*` API is organised |
-| [Diagnostics and troubleshooting](docs/troubleshooting.md) | Diagnostic commands and known Bluetooth issues |
+| [Diagnostics and troubleshooting](docs/troubleshooting.md) | Diagnostic commands, Bluetooth issues and testing in the editor |
 | [Source layout](docs/architecture.md) | For changing the code: the layers, and where to change what |
 
 ## Questions

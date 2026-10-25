@@ -17,10 +17,10 @@ knowing about — it caps `Create Player` whether or not the screen is ever spli
 with **Set Force Disable Splitscreen** on. Splitscreen stops at four because four is as many views as fit
 on a television; that is a rendering limit and says nothing about how many people are playing.
 
-Call **JSL4U Set Max Local Players** from `BeginPlay`, before creating any player, to raise it. Doing it
-there keeps a decision that belongs to your game in your game, rather than in a `DefaultEngine.ini` entry
-under the wrong name where nobody reading your player-spawning code will find it. **JSL4U Get Max Local
-Players** reads it back.
+There are two ways to raise it, and both change the same value. Unreal's own is `MaxSplitscreenPlayers`
+in the project's `Config/DefaultEngine.ini` (see [Getting started](getting-started.md)). This plugin's is
+**JSL4U Set Max Local Players**, called from `BeginPlay` before creating any player, which keeps the limit
+in the Blueprint that creates the players. **JSL4U Get Max Local Players** reads it back.
 
 Assignment nodes are under **JoyShock Library | Controller Assignment**:
 
