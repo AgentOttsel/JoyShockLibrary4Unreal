@@ -69,8 +69,9 @@ the log says which read failed and at what address.
 
 ### The extra sensors
 
-Each half carries sensors no other controller has — a magnetometer, a temperature sensor, and an optical
-mouse sensor in its underside — all read with **JSL4U Get Switch 2 Sensors**.
+Each Joy-Con 2 half carries sensors no Switch 1 or PlayStation controller has — a magnetometer, a temperature
+sensor, and an optical mouse sensor in its underside — all read with **JSL4U Get Switch 2 Sensors**. The
+Pro Controller 2 has the magnetometer, read over Bluetooth only, and no mouse sensor.
 
 The mouse sensor reports an **absolute** position from 0 to 65535 on each axis that rolls over: about 80 cm
 of desk, on a scale of roughly 12000 units per length of a Pro Controller. Subtracting one reading from an
@@ -99,3 +100,7 @@ plugin's set-up and rumble — close Steam while using it over USB. See
 and Unreal's Standalone mode runs the game as a second process next to the editor. The plugin releases an
 idle hold after one second, and a process that lost the race retries, so the game still gets the factory
 stick calibration, rumble and LEDs without closing the editor.
+
+**Over Bluetooth it does not.** A Bluetooth connection belongs to the process that opened it, and nothing
+hands it over: if the editor connected the controller, the Standalone game never sees it. Play in the
+editor's viewport, use the cable, or close the editor and launch the game on its own.

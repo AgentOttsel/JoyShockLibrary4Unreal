@@ -76,7 +76,7 @@ in, and On Charging Changed reports the cable or dock going in and out.
 A Switch 2 controller reports its cell's **voltage**, not its charge, so its percentage is a straight line
 between 3.0 V empty and 4.2 V full, where the real discharge curve is not straight — and voltage sags
 under load, so it reads lower mid-rumble than at rest. Drive a bar from it, not a number. The voltage
-itself is on **JSL4U Get Switch 2 Sensors**.
+itself is on **JSL4U Get Switch 2 Sensors**. **Is Charging** stays false on the Switch 2 controllers.
 
 ## Model identifiers
 

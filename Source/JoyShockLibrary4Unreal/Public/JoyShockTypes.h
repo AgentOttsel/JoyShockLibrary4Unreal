@@ -372,8 +372,8 @@ enum class EJSL4UControllerType : uint8
  * percentage would be invented precision. Sony controllers report finer steps, which are bucketed into
  * the same five so a game can treat every controller the same way.
  *
- * Unknown is not "flat" -- it means this controller does not report charge (the Switch 2 Pro Controller,
- * currently), or none has arrived yet. Compare against it explicitly before treating a value as low.
+ * Unknown is not "flat" -- it means this controller does not report charge, or none has arrived yet.
+ * Compare against it explicitly before treating a value as low.
  */
 UENUM(BlueprintType)
 enum class EJSL4UBatteryLevel : uint8
