@@ -521,9 +521,11 @@ bool JoyShock::init_switch2() {
 			sw2_init_failure_logged = true;
 		}
 		sw2_init_succeeded = false;
+		sw2_init_lacked_interface = true;
 		this->initialised = true;
 		return false;
 	}
+	sw2_init_lacked_interface = false;
 
 	WINUSB_INTERFACE_HANDLE usbHandle = static_cast<WINUSB_INTERFACE_HANDLE>(sw2_winusb_handle);
 	const UCHAR outPipe = sw2_out_pipe;

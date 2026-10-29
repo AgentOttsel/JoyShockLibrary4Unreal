@@ -312,6 +312,9 @@ public:
 	unsigned char sw2_out_pipe = 0x02;
 	unsigned char sw2_in_pipe = 0x82;
 	bool sw2_init_succeeded = false;
+	// Whether the last USB init failed only because another process held the command interface -- the one
+	// failure the polling thread keeps retrying without limit, since waiting for that lease is cheap.
+	bool sw2_init_lacked_interface = false;
 
 	// Switch 2 HD rumble: the controller consumes a stream of amplitude/frequency frames, each packet
 	// carrying a rolling 4-bit id it uses to drop duplicates. Two routes can carry them (see

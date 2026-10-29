@@ -388,6 +388,8 @@ bool JoyShock::recover_switch_mode() {
 	uint8_t imuEnable = 0x01;
 	bool bImuOk = write_subcommand(0x40, &imuEnable, 1);
 
-	note_output_result(OutputFunctionMotionSensor, bModeOk && bImuOk);
+	// Deliberately not fed to note_output_result. A write that fails here is a controller mid-reset, not
+	// evidence that another application owns it, and reporting it as one raised "Steam is holding this
+	// controller" with nothing else running.
 	return bModeOk && bImuOk;
 }
