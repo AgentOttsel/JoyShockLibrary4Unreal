@@ -96,6 +96,27 @@ static FString Sw2GetCompositeParentIdForInterfacePath(const FString& InterfaceP
 }
 #endif
 
+// Whether a parsed stick calibration describes a stick. A block that is blank or erased parses into numbers
+// perfectly happily -- an erased one into a centre of 4095, which then reads as a stick jammed to one side,
+// and a blank one into a zero range that would divide by zero -- so what comes back is judged as a
+// description of a stick, not merely for whether the read succeeded. Shared by the USB and Bluetooth inits,
+// which once disagreed: only Bluetooth checked, so the same controller could centre on one transport and not
+// the other.
+//
+// A 12-bit axis: the centre sits near the middle of the scale, and each direction of travel is some real
+// distance without spanning the whole of it. One test over both axes, because a calibration is only usable
+// if all four directions are.
+static bool Sw2StickCalIsPlausible(const uint16_t* calX, const uint16_t* calY)
+{
+	auto AxisIsPlausible = [](const uint16_t* cal)
+	{
+		return cal[1] >= 1000 && cal[1] <= 3000
+			&& cal[2] > cal[1] + 200 && cal[2] - cal[1] <= 2048
+			&& cal[0] + 200 < cal[1] && cal[1] - cal[0] <= 2048;
+	};
+	return AxisIsPlausible(calX) && AxisIsPlausible(calY);
+}
+
 bool JoyShock::sw2_open_winusb() {
 #if PLATFORM_WINDOWS
 	// Device interface GUID exposed by the controller's own MS OS descriptor for its WinUSB interface
@@ -430,16 +451,7 @@ bool JoyShock::init_switch2_bluetooth() {
 		const uint16_t candidateX[3] = { static_cast<uint16_t>(cx - rxb), cx, static_cast<uint16_t>(cx + rxa) };
 		const uint16_t candidateY[3] = { static_cast<uint16_t>(cy - ryb), cy, static_cast<uint16_t>(cy + rya) };
 
-		// A 12-bit axis: the centre sits near the middle of the scale, and each direction of travel is some
-		// real distance without spanning the whole of it. Written as one test over both axes because a
-		// calibration is only usable if all four directions are.
-		auto AxisIsPlausible = [](const uint16_t* cal)
-		{
-			return cal[1] >= 1000 && cal[1] <= 3000
-				&& cal[2] > cal[1] + 200 && cal[2] - cal[1] <= 2048
-				&& cal[0] + 200 < cal[1] && cal[1] - cal[0] <= 2048;
-		};
-		if (!AxisIsPlausible(candidateX) || !AxisIsPlausible(candidateY))
+		if (!Sw2StickCalIsPlausible(candidateX, candidateY))
 		{
 			UE_LOG(LogJoyShockLibrary, Log,
 				TEXT("SW2 %s stick cal (%s) at 0x%06X describes no stick "
@@ -583,14 +595,31 @@ bool JoyShock::init_switch2() {
 		// Stick calibration is nine bytes wherever it is stored: packed 12-bit pairs holding
 		// [centerX,centerY][rangeX_a,rangeY_a][rangeX_b,rangeY_b]. Takes the nine bytes rather than a block
 		// base, because the factory copy and the user copy sit at different offsets within their blocks.
-		auto ParseStickCal = [&Unpack12](const unsigned char* nine, uint16_t* calX, uint16_t* calY)
+		//
+		// Parsed aside and committed only if it passes Sw2StickCalIsPlausible, so a rejected block leaves the
+		// slot untouched -- which the parser reads as "no calibration, use the fixed centre" -- rather than a
+		// stick held to one side for the whole connection.
+		auto ParseStickCal = [&Unpack12](const unsigned char* nine, uint16_t* calX, uint16_t* calY,
+			const TCHAR* label, const TCHAR* source)
 		{
 			uint16_t cx, cy, rxa, rya, rxb, ryb;
 			Unpack12(nine, cx, cy);
 			Unpack12(nine + 3, rxa, rya);
 			Unpack12(nine + 6, rxb, ryb);
-			calX[1] = cx; calX[2] = cx + rxa; calX[0] = cx - rxb;
-			calY[1] = cy; calY[2] = cy + rya; calY[0] = cy - ryb;
+			const uint16_t candidateX[3] = { static_cast<uint16_t>(cx - rxb), cx, static_cast<uint16_t>(cx + rxa) };
+			const uint16_t candidateY[3] = { static_cast<uint16_t>(cy - ryb), cy, static_cast<uint16_t>(cy + rya) };
+			if (!Sw2StickCalIsPlausible(candidateX, candidateY))
+			{
+				UE_LOG(LogJoyShockLibrary, Log,
+					TEXT("SW2 %s stick cal (%s) describes no stick (centre (%d, %d), min (%d, %d), max (%d, %d)); ignored.\n"),
+					label, source, candidateX[1], candidateY[1], candidateX[0], candidateY[0], candidateX[2], candidateY[2]);
+				return false;
+			}
+			calX[0] = candidateX[0]; calX[1] = candidateX[1]; calX[2] = candidateX[2];
+			calY[0] = candidateY[0]; calY[1] = candidateY[1]; calY[2] = candidateY[2];
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 %s stick cal (%s): centre (%d, %d), min (%d, %d), max (%d, %d)\n"),
+				label, source, calX[1], calY[1], calX[0], calY[0], calX[2], calY[2]);
+			return true;
 		};
 
 		unsigned char spi[64];
@@ -616,30 +645,20 @@ bool JoyShock::init_switch2() {
 			return !(nine[0] == 0xFF && nine[1] == 0xFF && nine[2] == 0xFF);
 		};
 
-		if (bReadUserCal && UserCalWritten(userCal + 0x02))
+		// A user block that is written but describes no stick falls through to the factory copy, as over
+		// Bluetooth.
+		if (!(bReadUserCal && UserCalWritten(userCal + 0x02)
+				&& ParseStickCal(userCal + 0x02, stick_cal_x_l, stick_cal_y_l, TEXT("left"), TEXT("user")))
+			&& SpiRead(0x013080, spi))
 		{
-			ParseStickCal(userCal + 0x02, stick_cal_x_l, stick_cal_y_l);
-			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 left stick cal (user): centre (%d, %d), min (%d, %d), max (%d, %d)\n"),
-				stick_cal_x_l[1], stick_cal_y_l[1], stick_cal_x_l[0], stick_cal_y_l[0], stick_cal_x_l[2], stick_cal_y_l[2]);
-		}
-		else if (SpiRead(0x013080, spi))
-		{
-			ParseStickCal(spi + 0x28, stick_cal_x_l, stick_cal_y_l);
-			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 left stick cal (factory): centre (%d, %d), min (%d, %d), max (%d, %d)\n"),
-				stick_cal_x_l[1], stick_cal_y_l[1], stick_cal_x_l[0], stick_cal_y_l[0], stick_cal_x_l[2], stick_cal_y_l[2]);
+			ParseStickCal(spi + 0x28, stick_cal_x_l, stick_cal_y_l, TEXT("left"), TEXT("factory"));
 		}
 
-		if (bReadUserCal && UserCalWritten(userCal + 0x22))
+		if (!(bReadUserCal && UserCalWritten(userCal + 0x22)
+				&& ParseStickCal(userCal + 0x22, stick_cal_x_r, stick_cal_y_r, TEXT("right"), TEXT("user")))
+			&& SpiRead(0x0130C0, spi))
 		{
-			ParseStickCal(userCal + 0x22, stick_cal_x_r, stick_cal_y_r);
-			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 right stick cal (user): centre (%d, %d), min (%d, %d), max (%d, %d)\n"),
-				stick_cal_x_r[1], stick_cal_y_r[1], stick_cal_x_r[0], stick_cal_y_r[0], stick_cal_x_r[2], stick_cal_y_r[2]);
-		}
-		else if (SpiRead(0x0130C0, spi))
-		{
-			ParseStickCal(spi + 0x28, stick_cal_x_r, stick_cal_y_r);
-			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 right stick cal (factory): centre (%d, %d), min (%d, %d), max (%d, %d)\n"),
-				stick_cal_x_r[1], stick_cal_y_r[1], stick_cal_x_r[0], stick_cal_y_r[0], stick_cal_x_r[2], stick_cal_y_r[2]);
+			ParseStickCal(spi + 0x28, stick_cal_x_r, stick_cal_y_r, TEXT("right"), TEXT("factory"));
 		}
 
 		struct Sw2InitCmd { unsigned char cmd; unsigned char subcmd; int dataLen; unsigned char data[20]; };
