@@ -264,6 +264,39 @@ static void discover_bluetooth_switch2(TSet<FString>& TrackedPaths, TMap<FString
 				continue;
 			}
 
+			// Only a controller in pairing mode (no host) or one bonded to this PC. One bonded elsewhere --
+			// a Switch 2 console in the same room -- advertises too when its owner presses a button to use
+			// the console, and connecting to it would take the controller away from them. Holding SYNC on it
+			// clears the host, and then it is taken and paired here.
+			//
+			// The host in the advertisement is in the same byte order GetHostAddress returns, so the two
+			// compare as they are (measured with the Unity port of this code).
+			if (Advertisement.ReconnectMac != 0)
+			{
+				const uint64 HostAddress = Switch2Ble::GetHostAddress();
+				if (HostAddress != 0 && Advertisement.ReconnectMac != HostAddress)
+				{
+					static FCriticalSection LoggedLock;
+					static TSet<uint64> LoggedAddresses;
+					bool bFirstTime = false;
+					{
+						FScopeLock Lock(&LoggedLock);
+						bool bAlreadyLogged = false;
+						LoggedAddresses.Add(Advertisement.Address, &bAlreadyLogged);
+						bFirstTime = !bAlreadyLogged;
+					}
+					if (bFirstTime)
+					{
+						UE_LOG(LogJoyShockLibrary, Log,
+							TEXT("\tleaving Bluetooth controller %s alone: it is paired with another device (%012llx). Hold SYNC on it to pair it with this PC.\n"),
+							*BlePath, Advertisement.ReconnectMac);
+					}
+					// Offered again shortly, so holding SYNC is noticed without restarting anything.
+					Switch2Ble::SuppressFor(Advertisement.Address, 2.0);
+					continue;
+				}
+			}
+
 			FSwitch2BleConnection* Connection = Switch2Ble::Connect(Advertisement.Address);
 			if (Connection == nullptr)
 			{

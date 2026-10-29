@@ -57,6 +57,12 @@ namespace Switch2Ble
 	// Hands over the controllers seen since the last call and clears the pending list.
 	void DrainDiscovered(TArray<FSwitch2BleAdvertisement>& OutDiscovered);
 
+	// Offers this controller again once Seconds have passed, instead of never. A drained controller is
+	// suppressed until a connection to it ends, which is right for one that was taken -- but one that was
+	// turned down without connecting would then not be offered again for the rest of the session, not even
+	// after its owner holds SYNC to pair it here.
+	void SuppressFor(uint64 Address, double Seconds);
+
 	// Connects, discovers the service's characteristics and subscribes to input. Blocking, and slow enough
 	// (a second or more) that it must never be called from the game thread. Returns null on failure.
 	FSwitch2BleConnection* Connect(uint64 Address);

@@ -408,8 +408,10 @@ bool StartScan()
 				}
 
 				TFunction<void()> Notify;
+				bool bOfferedBefore = false;
 				{
 					FScopeLock ScanLock(&GScanLock);
+					bOfferedBefore = GSuppressedUntil.Contains(Found.Address);
 					if (const double* SuppressedUntil = GSuppressedUntil.Find(Found.Address))
 					{
 						if (FPlatformTime::Seconds() < *SuppressedUntil)
@@ -428,9 +430,20 @@ bool StartScan()
 					}
 				}
 
-				UE_LOG(LogSwitch2Bluetooth, Log,
-					TEXT("Switch 2 controller %012llX is advertising (product %04X, paired to %012llX)."),
-					Found.Address, Found.ProductId, Found.ReconnectMac);
+				// Verbose after the first offer: a controller turned down (paired elsewhere, or a failed
+				// connection) is offered again every few seconds, and the log needs to hear it once.
+				if (bOfferedBefore)
+				{
+					UE_LOG(LogSwitch2Bluetooth, Verbose,
+						TEXT("Switch 2 controller %012llX is advertising (product %04X, paired to %012llX)."),
+						Found.Address, Found.ProductId, Found.ReconnectMac);
+				}
+				else
+				{
+					UE_LOG(LogSwitch2Bluetooth, Log,
+						TEXT("Switch 2 controller %012llX is advertising (product %04X, paired to %012llX)."),
+						Found.Address, Found.ProductId, Found.ReconnectMac);
+				}
 
 				// Outside the lock: this runs an enumeration pass, and holding the scan lock across it
 				// would block every further advertisement for its duration.
@@ -495,6 +508,12 @@ void DrainDiscovered(TArray<FSwitch2BleAdvertisement>& OutDiscovered)
 	FScopeLock Lock(&GScanLock);
 	OutDiscovered.Append(GDiscovered);
 	GDiscovered.Reset();
+}
+
+void SuppressFor(uint64 Address, double Seconds)
+{
+	FScopeLock Lock(&GScanLock);
+	GSuppressedUntil.Add(Address, FPlatformTime::Seconds() + Seconds);
 }
 
 FSwitch2BleConnection* Connect(uint64 Address)
@@ -1072,6 +1091,7 @@ namespace Switch2Ble
 	void StopScan() {}
 	void SetDiscoveryCallback(TFunction<void()>) {}
 	void DrainDiscovered(TArray<FSwitch2BleAdvertisement>&) {}
+void SuppressFor(uint64, double) {}
 	FSwitch2BleConnection* Connect(uint64) { return nullptr; }
 	void Disconnect(FSwitch2BleConnection*) {}
 	bool IsConnected(const FSwitch2BleConnection*) { return false; }
