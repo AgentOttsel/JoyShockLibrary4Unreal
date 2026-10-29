@@ -1710,6 +1710,7 @@ FJSL4USwitch2Sensors UJoyShockLibrary::JSL4UGetSwitch2Sensors(int64 ConnectionId
 	// pair of numbers that has to agree with itself, and the newest reading of each is what a caller wants.
 	Sensors.bIsSupported = true;
 	Sensors.BatteryVolts = jc->sw2_battery_volts.load();
+	Sensors.BatteryCurrent = jc->sw2_battery_current.load();
 	Sensors.TemperatureCelsius = jc->sw2_temperature_celsius.load();
 	Sensors.Magnetometer = FVector(
 		jc->sw2_magnetometer_x.load(), jc->sw2_magnetometer_y.load(), jc->sw2_magnetometer_z.load());

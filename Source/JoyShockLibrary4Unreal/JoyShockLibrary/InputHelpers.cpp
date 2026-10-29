@@ -221,6 +221,11 @@ static bool parse_switch2_report(JoyShock* jc, uint8_t* packet, int32 len, FIMUS
 			jc->battery_percent.store(percent);
 			jc->battery_level.store(BatteryLevelFromPercent(percent));
 		}
+		// The two bytes after the voltage, which Switch2Connect reads as the battery current in hundredths
+		// of an amp. Read signed here, so that whichever direction means charging shows up as a sign rather
+		// than as an absurd unsigned number. battery_charging is deliberately not derived from it until the
+		// sign has been checked with a cable going in and out (R-031).
+		jc->sw2_battery_current.store(uint16_to_int16(packet[34] | (packet[35] << 8)) / 100.0f);
 	}
 
 	// The remaining sensors. None of these is motion, and nothing outside this family reports them, so

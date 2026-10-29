@@ -158,6 +158,7 @@ public:
 	// and nothing outside this family reports them. All are written by the polling thread and read by the
 	// game thread, hence atomic.
 	std::atomic<float> sw2_battery_volts{ 0.f };
+	std::atomic<float> sw2_battery_current{ 0.f };
 	std::atomic<float> sw2_temperature_celsius{ 0.f };
 	std::atomic<int32> sw2_magnetometer_x{ 0 };
 	std::atomic<int32> sw2_magnetometer_y{ 0 };

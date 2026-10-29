@@ -647,6 +647,12 @@ struct JOYSHOCKLIBRARY4UNREAL_API FJSL4USwitch2Sensors
 	UPROPERTY(BlueprintReadOnly)
 	float BatteryVolts = 0.f;
 
+	// The battery current, in amps, as the two bytes after the voltage read signed and divided by 100 --
+	// the scale Switch2Connect uses. Unconfirmed on hardware, including which sign means charging: it is
+	// published so that can be measured with the cable in and out, and Is Charging can then be built on it.
+	UPROPERTY(BlueprintReadOnly)
+	float BatteryCurrent = 0.f;
+
 	// Treat as unconfirmed. A pair on the same desk at the same room temperature read 25 and 36, and the 25
 	// is exactly the constant this is offset from -- so that half's raw field was zero, and the offset is a
 	// guess that has never been checked against a thermometer. Fine as a curiosity, not as a measurement.
