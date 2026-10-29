@@ -27,6 +27,11 @@
 // held here is valid for every moment a thread of ours can still be running.
 static std::atomic<FJoyShockLibrary4UnrealModule*> GLiveJoyShockModule{ nullptr };
 
+// The thread StartupModule hands the Bluetooth scan to. ShutdownModule waits for it: otherwise a close during
+// its blocking adapter query let it go on to install a discovery callback and start a scan after the
+// Bluetooth teardown had already run, leaving a radio thread calling into a module that was gone.
+static TFuture<void> GBluetoothStartup;
+
 FJoyShockLibrary4UnrealModule& FJoyShockLibrary4UnrealModule::GetInstance()
 {
 	if (FJoyShockLibrary4UnrealModule* Live = GLiveJoyShockModule.load(std::memory_order_acquire))
@@ -139,22 +144,21 @@ void FJoyShockLibrary4UnrealModule::StartupModule()
 	// the same coalesced enumeration pass directly.
 	//
 	// On a background thread because querying the adapter blocks, and this runs during engine startup.
-	Async(EAsyncExecution::Thread, [this]()
+	GBluetoothStartup = Async(EAsyncExecution::Thread, [this]()
 	{
-		if (bShuttingDown.load() || !Switch2Ble::IsSupported())
+		if (bShuttingDown.load() || !Switch2Ble::IsSupported() || bShuttingDown.load())
 		{
 			return;
 		}
 
-		Switch2Ble::SetDiscoveryCallback([]()
+		Switch2Ble::SetDiscoveryCallback([this]()
 		{
-			// Guarded because this runs on a radio thread, which knows nothing about the engine's lifetime:
-			// an advertisement can arrive at any moment, including after the module has gone. GetInstance
-			// would load the module back in to answer that.
-			if (FJoyShockLibrary4UnrealModule::IsAvailable())
-			{
-				FJoyShockLibrary4UnrealModule::GetInstance().RequestConnectDevices();
-			}
+			// This module, captured, rather than looked up: this runs on a radio thread, and both lookups
+			// (IsAvailable and GetInstance's fallback) go through FModuleManager, which off the game thread
+			// during shutdown fails its own check -- see GetInstance. The capture is safe because
+			// Switch2Ble::Shutdown clears this callback and waits out any call already running before
+			// ShutdownModule returns. RequestConnectDevices does nothing once shutdown has begun.
+			RequestConnectDevices();
 		});
 		Switch2Ble::StartScan();
 	});
@@ -168,6 +172,11 @@ void FJoyShockLibrary4UnrealModule::ShutdownModule()
 	while (bConnectRunning.load())
 	{
 		FPlatformProcess::Sleep(0.001f);
+	}
+	// Before Switch2Ble::Shutdown below, so a scan this thread starts late is still one that gets stopped.
+	if (GBluetoothStartup.IsValid())
+	{
+		GBluetoothStartup.Wait();
 	}
 
 	// Then stop the controllers themselves, before anything they use goes away. Their polling threads own a

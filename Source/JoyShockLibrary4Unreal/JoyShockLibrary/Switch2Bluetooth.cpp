@@ -212,6 +212,10 @@ namespace
 	constexpr double SuppressAfterFailureSeconds = 3.0;
 	TMap<uint64, double> GSuppressedUntil;
 	TFunction<void()> GOnDiscovered;
+	// Discovery callbacks currently running on a radio thread. Clearing GOnDiscovered stops new ones but does
+	// not wait for one already past the lock, so Shutdown waits for this to drain before the module it calls
+	// into can go away.
+	std::atomic<int32> GDiscoveryCallbacksInFlight{ 0 };
 
 	// Connections are shared-owned, even though the interface hands out a raw pointer. The pointer is a
 	// handle: its holder (a controller's polling thread) may be blocked inside a read for a full second,
@@ -416,6 +420,12 @@ bool StartScan()
 					GSuppressedUntil.Add(Found.Address, SuppressForever);
 					GDiscovered.Add(Found);
 					Notify = GOnDiscovered;
+					if (Notify)
+					{
+						// Counted under the same lock Shutdown clears the callback under, so Shutdown either
+						// sees this callback in flight or this callback sees no callback.
+						GDiscoveryCallbacksInFlight.fetch_add(1);
+					}
 				}
 
 				UE_LOG(LogSwitch2Bluetooth, Log,
@@ -427,6 +437,7 @@ bool StartScan()
 				if (Notify)
 				{
 					Notify();
+					GDiscoveryCallbacksInFlight.fetch_sub(1);
 				}
 				return;
 			}
@@ -1028,6 +1039,13 @@ void Shutdown()
 	{
 		FScopeLock ScanLock(&GScanLock);
 		GOnDiscovered = nullptr;
+	}
+	// And one already running finishes before this returns. It only queues an enumeration request, which
+	// returns at once during shutdown, so the wait is short -- but without it the callback could still be
+	// inside the module when the module is destroyed.
+	while (GDiscoveryCallbacksInFlight.load() > 0)
+	{
+		FPlatformProcess::Sleep(0.001f);
 	}
 
 	TArray<FConnectionPtr> Remaining;
