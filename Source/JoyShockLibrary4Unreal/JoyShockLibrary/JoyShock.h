@@ -360,9 +360,10 @@ public:
 	int32 player_number = 0;
 	int32 reuse_counter = 0;
 
-	bool cancel_thread = false;
-	bool delete_on_finish = false;
-	bool remove_on_finish = true;
+	// Written by shutdown and read by the polling thread with no lock of the reader's own, hence atomic.
+	std::atomic<bool> cancel_thread{ false };
+	std::atomic<bool> delete_on_finish{ false };
+	std::atomic<bool> remove_on_finish{ true };
 	std::thread* thread = nullptr;
 
 	// Set by the polling thread as the last thing it does, when it is leaving without freeing this device --

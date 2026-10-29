@@ -469,17 +469,23 @@ static void finish_polling_thread(JoyShock* jc, FJoyShockLibrary4UnrealModule& J
 	}
 
 	// disconnect this device
+	//
+	// Freed after the lock is released. The maps stopped pointing at it above, under that lock, so nothing
+	// can reach it any more -- and destroying a Bluetooth Switch 2 closes its GATT session and device
+	// synchronously, which under the lock froze every device getter on the game thread for as long as WinRT
+	// took.
 	const bool bDeletedHere = jc->delete_on_finish;
-	if (bDeletedHere)
-	{
-		UE_LOG(LogJoyShockLibrary, Log, TEXT("\t\tdeleting jc\n"));
-		delete jc;
-	}
 
 	if (lockedThread)
 	{
 		JSL4UModule._connectedLock.unlock();
 		// UJoyShockLibrary::ConnectedLock.Unlock();
+	}
+
+	if (bDeletedHere)
+	{
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("\t\tdeleting jc\n"));
+		delete jc;
 	}
 
 	// notify that we disconnected this device, and say whether or not it was a timeout (if not a timeout, then an explicit disconnect)
@@ -687,6 +693,14 @@ void pollIndividualLoop(JoyShock *jc) {
 			JSL4UModule._connectedLock.lock();
 			// UJoyShockLibrary::_connectedLock.lock();
 			// UJoyShockLibrary::ConnectedLock.Lock();
+			// Shutdown may have claimed this device between the read returning and the lock being taken. It
+			// sets cancel_thread under this same lock, so seeing it here means the maps are already empty and
+			// the device is shutdown's to free: leave without touching either, or both sides free it.
+			if (jc->cancel_thread)
+			{
+				JSL4UModule._connectedLock.unlock();
+				break;
+			}
 			lockedThread = true;
 			const bool gettingReused = jc->reuse_counter != reuseCounter;
 			jc->delete_on_finish = true;
@@ -712,6 +726,12 @@ void pollIndividualLoop(JoyShock *jc) {
 				// just make sure we get this thing deleted before someone else tries to start a new connection
 				JSL4UModule._connectedLock.lock();
 				// UJoyShockLibrary::ConnectedLock.Lock();
+				// See the same check in the disconnect branch above.
+				if (jc->cancel_thread)
+				{
+					JSL4UModule._connectedLock.unlock();
+					break;
+				}
 				lockedThread = true;
 				const bool gettingReused = jc->reuse_counter != reuseCounter;
 				jc->delete_on_finish = true;

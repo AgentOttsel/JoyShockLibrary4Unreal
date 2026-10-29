@@ -466,6 +466,10 @@ int32 UJoyShockLibrary::ConnectDevices()
 		_byPath.Emplace(Upgrade.Path, ExistingDevice);
 	}
 
+	// Freed after the lock is released, not here: destroying a Bluetooth Switch 2 closes its GATT session and
+	// device synchronously, and every device getter on the game thread waits on this lock. Nothing else can
+	// reach these -- they never entered the maps.
+	TArray<JoyShock*> RaceLosers;
 	for (JoyShock* jc : NewDevices)
 	{
 		// The path may have been claimed while phase 2 ran (a transport switch, or a concurrent caller of
@@ -489,7 +493,7 @@ int32 UJoyShockLibrary::ConnectDevices()
 			// (Safe to take the handle lock under _connectedLock: nothing takes them the other way round.)
 			const FString Identity = jc->handle_identity;
 			const int32 DiscardedHandle = jc->intHandle;
-			delete jc;
+			RaceLosers.Add(jc);
 			if (!_joyshocks.Contains(DiscardedHandle))
 			{
 				ReleaseUniqueHandle(Identity);
@@ -523,6 +527,11 @@ int32 UJoyShockLibrary::ConnectDevices()
 	const int32 totalDevices = _joyshocks.Num();
 
 	JSL4UModule._connectedLock.unlock();
+
+	for (JoyShock* jc : RaceLosers)
+	{
+		delete jc;
+	}
 
 	bring_devices_online(DevicesToBringOnline);
 

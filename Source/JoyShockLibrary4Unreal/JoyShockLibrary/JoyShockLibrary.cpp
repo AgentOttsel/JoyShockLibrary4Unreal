@@ -181,6 +181,23 @@ bool ShutdownAllDevices()
 	_joyshocks.GenerateValueArray(Devices);
 	_joyshocks.Empty();
 	_byPath.Empty();
+	// Claimed under the same lock the polling threads' disconnect and timeout branches take before deciding
+	// to free themselves. Set outside it, a thread whose read had just failed could take the lock in the gap,
+	// mark its device for deletion and free it -- then this function went on reading thread_exited from
+	// freed memory, and could delete the device a second time after its deadline.
+	//
+	// Neither flag may be left set: the thread must not touch the maps (already gone) or announce a
+	// disconnect (the callbacks are unbound), and above all it must not free itself, because a thread that
+	// never exits would then be running inside memory this function had freed.
+	for (JoyShock* jc : Devices)
+	{
+		if (jc != nullptr)
+		{
+			jc->remove_on_finish = false;
+			jc->delete_on_finish = false;
+			jc->cancel_thread = true;
+		}
+	}
 	JSL4UModule._connectedLock.unlock();
 
 	_pathHandleLock.Lock();
@@ -190,19 +207,9 @@ bool ShutdownAllDevices()
 
 	Devices.RemoveAll([](const JoyShock* Device) { return Device == nullptr; });
 
-	// Signalled all at once, before waiting on any of them. Each polling thread is blocked in a read of up
+	// All of them were signalled above, before waiting on any. Each polling thread is blocked in a read of up
 	// to a second, so asking them one at a time would cost a second per controller instead of a second for
 	// all of them.
-	for (JoyShock* jc : Devices)
-	{
-		// Neither flag may be left set: the thread must not touch the maps (already gone) or announce a
-		// disconnect (the callbacks are unbound), and above all it must not free itself, because a thread
-		// that never exits would then be running inside memory this function had freed.
-		jc->remove_on_finish = false;
-		jc->delete_on_finish = false;
-		jc->cancel_thread = true;
-	}
-
 	// Bounded, not a join. hidapi's Windows write waits on its overlapped result with no timeout, so a
 	// controller that stops completing writes -- a half-unplugged one, in practice -- leaves its polling
 	// thread wedged for good. Joining that would leave the editor unable to close, which is a worse failure
