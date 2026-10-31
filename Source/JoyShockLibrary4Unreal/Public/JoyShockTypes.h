@@ -648,8 +648,7 @@ struct JOYSHOCKLIBRARY4UNREAL_API FJSL4USwitch2Sensors
 	float BatteryVolts = 0.f;
 
 	// The battery current, in amps, as the two bytes after the voltage read signed and divided by 100 --
-	// the scale Switch2Connect uses. Unconfirmed on hardware, including which sign means charging: it is
-	// published so that can be measured with the cable in and out, and Is Charging can then be built on it.
+	// the scale Switch2Connect uses. Above zero while charging, and zero on battery: Is Charging comes from it.
 	UPROPERTY(BlueprintReadOnly)
 	float BatteryCurrent = 0.f;
 
