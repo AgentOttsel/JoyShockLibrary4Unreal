@@ -303,8 +303,15 @@ public:
 	// 0x08000: N
 	// 0x10000: home / PS
 	// 0x20000: capture / touchpad-click
-	// 0x40000: SL
-	// 0x80000: SR
+	// 0x40000: mic (DualSense)
+	// 0x80000: SL
+	// 0x100000: SR
+	// 0x200000: FnL (DualSense Edge)
+	// 0x400000: FnR (DualSense Edge)
+	// 0x800000: C (Switch 2 GameChat)
+	// 0x1000000: GL (Switch 2 rear grip)
+	// 0x2000000: GR (Switch 2 rear grip)
+	// The JSMASK_* defines in JoyShockTypes.h are the authority; keep this list in step with them.
 	// These are the best way to get all the buttons/triggers/sticks, gyro/accelerometer (IMU), orientation/acceleration/gravity (Motion), or touchpad
 	static FJoyShockState GetSimpleStateForHandle(int32 deviceId);
 
