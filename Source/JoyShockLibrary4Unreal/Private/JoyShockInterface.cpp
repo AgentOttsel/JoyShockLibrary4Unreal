@@ -983,6 +983,25 @@ void FJoyShockInterface::OnTouchCallback(int32 DeviceHandle, const FTouchState& 
 bool FJoyShockInterface::OnConnectCallback(int32 InDeviceHandle)
 {
 	// UE_LOG(LogJoyShockLibrary, Log, TEXT(">>>>>OnConnectCallback %d"), InDeviceHandle);
+
+	// The connect is queued from the poll thread and drained here a frame later, after that frame's
+	// disconnects. A connection that dies within that frame -- a Pro Controller 2 whose Bluetooth link closed
+	// right after its first report, because the cable arrived -- would otherwise be registered after its own
+	// disconnect: a controller the engine believes connected, with no identity (its handle no longer names
+	// anything). Worse, the next controller to reuse the handle -- that same Pro Controller 2 over USB -- is
+	// then ignored as a duplicate below, and never gets an identity or a player. A handle that is not live
+	// now has nothing to register; whatever takes it next announces itself on its own first report.
+	{
+		TArray<int32> LiveHandles;
+		UJoyShockLibrary::GetConnectedDeviceHandles(LiveHandles);
+		if (!LiveHandles.Contains(InDeviceHandle))
+		{
+			UE_LOG(LogJoyShockLibrary, Verbose,
+				TEXT("Dropping the connect of device %d: it disconnected before the connect was processed."), InDeviceHandle);
+			return false;
+		}
+	}
+
 	FScopeLock ContainerLock(&ControllerContainerLock);
 
 	// A device can be announced twice: it announces itself from its poll thread on first input, and this

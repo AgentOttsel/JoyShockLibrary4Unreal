@@ -789,7 +789,7 @@ void pollIndividualLoop(JoyShock *jc) {
 					if (jc->init_switch2())
 					{
 						UE_LOG(LogJoyShockLibrary, Log,
-							TEXT("SW2: acquired the released command interface and completed calibrated init."));
+							TEXT("SW2: the USB init went through on a retry."));
 					}
 				}
 			}

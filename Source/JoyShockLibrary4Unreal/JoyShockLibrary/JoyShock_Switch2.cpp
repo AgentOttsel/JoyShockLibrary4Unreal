@@ -713,7 +713,13 @@ bool JoyShock::init_switch2() {
 			}
 			else
 			{
+				// A healthy USB init has every command acknowledged. A missing ack means the controller was
+				// still busy -- typically leaving a Bluetooth link the cable arrived during -- and dropped the
+				// command, and the ones dropped first include the feature enables, so it streams with no
+				// motion and no player light. Counting it as a failure lets the poll loop's bounded USB retry
+				// run the init again once the controller has settled.
 				UE_LOG(LogJoyShockLibrary, Log, TEXT("  SW2 cmd %02x:%02x -> sent (%u bytes), no ack\n"), c.cmd, c.subcmd, written);
+				bSuccess = false;
 			}
 		}
 		sw2_last_command_time = std::chrono::steady_clock::now();
