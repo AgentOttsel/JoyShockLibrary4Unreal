@@ -71,7 +71,7 @@ the log says which read failed and at what address.
 
 Each Joy-Con 2 half carries sensors no Switch 1 or PlayStation controller has — a magnetometer, a temperature
 sensor, and an optical mouse sensor in its underside — all read with **JSL4U Get Switch 2 Sensors**. The
-Pro Controller 2 has the magnetometer, read over Bluetooth only, and no mouse sensor.
+Pro Controller 2 has the magnetometer, read over USB and Bluetooth, and no mouse sensor.
 
 The mouse sensor reports an **absolute** position from 0 to 65535 on each axis that rolls over: about 80 cm
 of desk, on a scale of roughly 12000 units per length of a Pro Controller. Subtracting one reading from an
