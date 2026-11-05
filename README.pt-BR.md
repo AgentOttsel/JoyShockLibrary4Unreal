@@ -14,6 +14,11 @@ Unreal e o Windows não conhecem: calibração do giroscópio, a light bar, junt
 controle é de qual jogador. Escreva o jogo com as APIs da engine e ele aceita qualquer gamepad; use um node
 `JSL4U*` quando quiser algo que só esses controles fazem.
 
+**O giroscópio procura seguir as recomendações do [GyroWiki](http://gyrowiki.jibbsmart.com/).** O plugin
+o calibra e entrega a leitura como ela é, sem dead zone, aceleração nem suavização, para o jogo transformá-la
+direto em rotação da câmera com um ajuste de sensibilidade. O resto do que faz a mira por giroscópio ficar
+boa, como combiná-la com o analógico, é da câmera do jogo, e o wiki explica como.
+
 ## Sumário
 
 - [Controles suportados](#controles-suportados)

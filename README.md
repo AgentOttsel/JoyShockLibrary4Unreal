@@ -14,6 +14,11 @@ have no concept of: gyro calibration, the light bar, joining two Joy-Cons, decid
 belongs to which player. Write your game against the engine's APIs and it supports every gamepad; reach
 for a `JSL4U*` node when you want something only these controllers can do.
 
+**The gyro tries to follow the [GyroWiki](http://gyrowiki.jibbsmart.com/)'s recommendations.** The plugin
+calibrates it and reports the reading as it is, with no dead zone, acceleration or smoothing, so a game can
+turn it straight into camera rotation with a sensitivity setting. The rest of what makes gyro aiming feel
+good, such as mixing it with the stick, belongs to the game's camera, and the wiki explains how.
+
 ## Contents
 
 - [Supported controllers](#supported-controllers)
