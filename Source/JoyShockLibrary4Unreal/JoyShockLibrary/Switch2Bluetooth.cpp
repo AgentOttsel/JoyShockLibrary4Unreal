@@ -1,5 +1,7 @@
 #include "Switch2Bluetooth.h"
 
+#include <atomic>
+
 // JSL_SWITCH2_BLUETOOTH is set by the module rules: it is 0 when no Windows SDK on the build machine
 // carries the C++/WinRT headers this transport is written against, which compiles Bluetooth out rather
 // than failing the build for everyone who only ever uses these controllers on a cable.
@@ -356,6 +358,11 @@ uint64 GetHostAddress()
 
 bool StartScan()
 {
+	if (IsYieldedToGame())
+	{
+		return false;
+	}
+
 	EnsureApartment();
 
 	FScopeLock Lock(&GScanLock);
@@ -1104,3 +1111,15 @@ void SuppressFor(uint64, double) {}
 }
 
 #endif // PLATFORM_WINDOWS && JSL_SWITCH2_BLUETOOTH
+
+// The same on every platform: it is a flag, not a radio operation, and the polling loop reads it everywhere.
+namespace
+{
+	std::atomic<bool> GYieldedToGame{ false };
+}
+
+namespace Switch2Ble
+{
+	void SetYieldedToGame(bool bYielded) { GYieldedToGame.store(bYielded); }
+	bool IsYieldedToGame() { return GYieldedToGame.load(); }
+}

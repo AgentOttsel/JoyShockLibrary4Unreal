@@ -630,7 +630,22 @@ void pollIndividualLoop(JoyShock *jc) {
 
 		// 10 seconds of no signal means forget this controller
 		int reuseCounter = jc->reuse_counter;
-		int res = jc->read_input_report(buf, 64, 1000);
+		int res = 0;
+		if (jc->is_ble() && Switch2Ble::IsYieldedToGame())
+		{
+			// A game on this machine wants this controller, and it cannot even see it while this process holds
+			// the link. Read as a disconnect, so the controller goes through the ordinary teardown -- the game
+			// is told, the device is freed, and freeing it is what closes the link. Only a controller that is on
+			// the radio right now: one on its cable has is_ble() false and is handed over by the USB lease.
+			UE_LOG(LogJoyShockLibrary, Log,
+				TEXT("Controller %d (%s): a game on this PC is asking for the Bluetooth controllers; releasing this one to it."),
+				jc->intHandle, *jc->name);
+			res = -1;
+		}
+		else
+		{
+			res = jc->read_input_report(buf, 64, 1000);
+		}
 
 		// Shutdown asked this thread to stop while it was inside that read. Leave before the branches below
 		// can read the result as a disconnect: they take the connected lock, announce the controller as gone

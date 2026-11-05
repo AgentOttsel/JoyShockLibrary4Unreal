@@ -226,6 +226,15 @@ static void discover_hid_devices(TSet<FString>& TrackedPaths, TMap<FString, FTra
 static void discover_bluetooth_switch2(TSet<FString>& TrackedPaths, TMap<FString, FTrackedIdentity>& TrackedByMac,
 	TArray<JoyShock*>& NewDevices, TSet<FString>& NewMacsThisPass)
 {
+	// A game on this machine has the Bluetooth controllers (see Switch2Ble::SetYieldedToGame): connecting one
+	// here would take it straight back from the game.
+	if (Switch2Ble::IsYieldedToGame())
+	{
+		TArray<FSwitch2BleAdvertisement> Ignored;
+		Switch2Ble::DrainDiscovered(Ignored);
+		return;
+	}
+
 	if (Switch2Ble::IsSupported())
 	{
 		// Scanning is what makes a controller appear when its SYNC button is held, so it runs from the

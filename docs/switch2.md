@@ -101,6 +101,9 @@ and Unreal's Standalone mode runs the game as a second process next to the edito
 idle hold after one second, and a process that lost the race retries, so the game still gets the factory
 stick calibration, rumble and LEDs without closing the editor.
 
-**Over Bluetooth it does not.** A Bluetooth connection belongs to the process that opened it, and nothing
-hands it over: if the editor connected the controller, the Standalone game never sees it. Play in the
-editor's viewport, use the cable, or close the editor and launch the game on its own.
+**Over Bluetooth, the editor hands its controllers over.** A Bluetooth connection belongs to the process that
+opened it, and a connected controller stops advertising, so a game could never find a controller the editor
+holds. While a game with this plugin is running on the same PC -- the Standalone the editor launched, or a
+packaged build -- the editor releases every Switch 2 it holds over Bluetooth and stops looking for more; the
+game then connects it, or a button press on the controller brings it there. When the game closes, the
+editor starts looking again, and a button press brings the controller back.
