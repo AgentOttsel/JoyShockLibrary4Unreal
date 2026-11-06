@@ -11,6 +11,13 @@ Connect one or more controllers and press Play. Every controller gets its own Lo
 PlayerController and Character, and moves it with its left stick — a small local-multiplayer example. It
 runs in Standalone and in the editor's Play viewport alike.
 
+Several controllers can drive one Character too. Each controller's panel has **Share player 1**, which
+puts that controller on player 1's slot with **JSL4U Assign Controller To Player Index**, and **Own
+player**, which hands it back to automatic assignment (-1) and so, normally, to the slot it left. A slot
+shared this way is the plugin's own feature, the one a joined Joy-Con pair uses: every controller on it
+feeds the same player through Enhanced Input, and their player lights show the same number. The
+controller's old Character stays where it was, idle, until the controller comes back. The names above each Character list the controllers now feeding its player; an assignment change raises no controller event, so the two buttons call **Refresh From Player** on every `WBP_ControllerName` right after moving the controller.
+
 ![Demo Level Working](../Images/DemoLevel1.png)
 
 ![Demo Level Working](../Images/DemoLevel2.png)
