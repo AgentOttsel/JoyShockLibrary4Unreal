@@ -84,14 +84,15 @@ wherever you last clicked -- after a click in the level viewport, no blue frame 
 while the other players' controllers each move a focus of their own, wherever it was left. A joined Joy-Con pair is one
 player, so its halves move the same focus.
 
-### A Standalone game in front of the editor
+A controller whose focus is navigated into the level viewport stays there: the viewport takes the
+stick for its camera, so navigation never leaves it, and a mouse click moves only player 1's focus. That
+controller keeps flying the camera, while player 1's follows the next click out of it.
 
-While no editor window is in front and no Play-In-Editor session is running, the editor keeps its
-controllers connected but hands none of their input to Unreal, so a Standalone game launched from it is
-the only thing the controller drives. Held buttons and sticks are released at that moment, and input
-resumes as soon as an editor window comes back to the front. The Output Log says when either happens.
-A game, packaged or Standalone, keeps Unreal's default and still answers its controllers from the
-background.
+### A game and the editor at the same time
+
+Only the application in front answers the controllers -- see [Only the window in front](input.md#only-the-window-in-front).
+So with a Standalone game launched from the editor, the controller drives whichever of the two you last
+clicked, never both. The Output Log says each time input stops or resumes.
 
 While any game with this plugin is running on the same PC, the editor also leaves every controller's
 player lights, light bar and rumble to that game, so the lights always show the game's players. The

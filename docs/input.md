@@ -48,6 +48,18 @@ d-pad and its shoulders, the right half the right stick, the face buttons and it
 arrive as **JoyShock Side Left** / **Side Right**. How to join and separate is in
 [Players and local multiplayer](players.md#combining-joy-cons-into-one-player).
 
+## Only the window in front
+
+A controller drives only the application that is in front. While another window is in front -- another
+program, or the editor when a Standalone game is behind it, or the other way round -- the plugin keeps
+the controllers connected and reading, but hands none of their input to Unreal; held buttons, sticks and
+motion are released at that moment, and input resumes when the application is back in front. This is
+stricter than Unreal's own default, which delivers gamepad input to a window in the background too. Play
+In Editor runs inside the editor, so it answers whenever the editor is in front.
+
+A side effect worth knowing: two game windows on one PC, such as a multi-process network session, take
+controller input only while in front.
+
 ## Sticks
 
 Every controller reports its sticks with the same convention, so one Mapping Context serves them all:

@@ -11,9 +11,6 @@
 #include "Misc/ConfigCacheIni.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformApplicationMisc.h"
-#if WITH_EDITOR
-#include "Engine/Engine.h"
-#endif
 #include <functional>
 #include <mutex>
 #include <shared_mutex>
@@ -349,11 +346,11 @@ void FJoyShockInterface::SendControllerEvents()
 	{
 		if (bDispatchInput)
 		{
-			UE_LOG(LogJoyShockLibrary, Log, TEXT("An editor window is in front again: controller input reaches the editor."));
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("This application is in front again: controller input reaches it."));
 		}
 		else
 		{
-			UE_LOG(LogJoyShockLibrary, Log, TEXT("No editor window is in front: controller input is held back from the editor until one is."));
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("Another application is in front: controller input is held back until this one is in front again."));
 		}
 	}
 	bDispatchedInputLastTick = bDispatchInput;
@@ -391,7 +388,7 @@ void FJoyShockInterface::SendControllerEvents()
 			if (!bDispatchInput)
 			{
 				// Released once, on the frame input stops, for the reason ReleaseAllInput gives for a
-				// disconnect: the editor would otherwise keep whatever was held when it lost the front.
+				// disconnect: this application would otherwise keep whatever was held when it lost the front.
 				if (bInputJustHeldBack)
 				{
 					ReleaseAllInput(ControllerState);
@@ -1201,36 +1198,20 @@ void FJoyShockInterface::ReleaseAllInput(FControllerState& State)
 }
 bool FJoyShockInterface::ShouldDispatchInput()
 {
-#if WITH_EDITOR
-	// A Standalone game launched from the editor is a second process holding the same controllers, and the
-	// engine dispatches gamepad input whether or not its application is in front (Slate.RequireFocusForGamepadInput
-	// defaults off). So the editor behind the game was driving its own menus with the player's controller --
-	// Slate's navigation frame walking across the editor while the game was being played.
+	// Only the application in front answers the controllers. Unreal itself dispatches gamepad input whether or
+	// not its application is in front (Slate.RequireFocusForGamepadInput defaults off), and that is wrong as
+	// soon as two processes with this plugin share the controllers -- the editor and the Standalone game it
+	// launched: the controller drove the game and walked Slate's navigation frame across the editor behind it,
+	// and the other way round, moved the game on the other monitor while the editor was being used.
 	//
-	// The editor stays connected and keeps reading; it only stops handing input to Unreal. Disconnecting
-	// would cost the reconnect and its player slot when the editor comes back to the front.
+	// Games included, packaged ones too: a game behind another window does not answer, as most PC games
+	// behave. It also means two game windows on one PC (a multi-process network session) take input only
+	// while in front. Play-In-Editor needs no exception: it runs inside the editor process, so it is in front
+	// whenever the editor is.
 	//
-	// Not in a game, which keeps the engine's default: whether a game in the background should still answer
-	// its controllers is the game's decision. And not during Play-In-Editor, where the game runs inside the
-	// editor process, so holding input back from the editor would hold it back from the game too.
-	if (!GIsEditor || FPlatformApplicationMisc::IsThisApplicationForeground())
-	{
-		return true;
-	}
-	if (GEngine != nullptr)
-	{
-		for (const FWorldContext& Context : GEngine->GetWorldContexts())
-		{
-			if (Context.WorldType == EWorldType::PIE)
-			{
-				return true;
-			}
-		}
-	}
-	return false;
-#else
-	return true;
-#endif
+	// The process stays connected and keeps reading; it only stops handing input to Unreal. Disconnecting
+	// would cost the reconnect and the player slot when it comes back to the front.
+	return FPlatformApplicationMisc::IsThisApplicationForeground();
 }
 bool FJoyShockInterface::OnDisconnectCallback(int32 InDeviceHandle, bool bInHasTimedOut,
 	TArray<FJoyConPairingChange>& OutPairingChanges)

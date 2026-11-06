@@ -261,8 +261,7 @@ private:
 	// the game thread, with ControllerContainerLock held and the device still mapped to its platform user.
 	void ReleaseAllInput(FControllerState& State);
 
-	// False only in the editor, while none of its windows is in front and no Play-In-Editor session runs. See
-	// the definition for why the editor holds input back and a game does not.
+	// False while another application is in front. See the definition for why.
 	static bool ShouldDispatchInput();
 
 	void UpdateJoyConGripTransitions(TArray<FJoyConPairingChange>& OutPairingChanges);
