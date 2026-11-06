@@ -431,6 +431,29 @@ static void send_pending_output_reports(JoyShock* jc, FPolledOutputState& out)
 // BEFORE calling ShutdownModule, and from any thread other than the game thread LoadModuleChecked then
 // fails its own check -- so a lookup here kills the editor on close, on a thread whose call stack says
 // nothing about why.
+// A Nintendo controller keeps the last player light it was sent, and on the cable it stays powered after the
+// process lets go of it -- so closing Unreal left a Pro Controller 2 showing player 1 until it was unplugged,
+// as if something still owned it. One last write-only report puts it back to how a controller attached to
+// nothing looks. Only cancel_thread brings a thread here, which only ShutdownAllDevices sets: a controller that
+// dropped is gone, and one switching transport keeps its player. The stream is about to close, so this cannot
+// disturb it.
+static void clear_player_lights_on_exit(JoyShock* jc)
+{
+	if (jc->controller_type != ControllerType::n_switch)
+	{
+		return;
+	}
+	// An editor closing while a game runs beside it: the controller is showing the game's player.
+	if (Switch2Ble::IsYieldedToGame())
+	{
+		return;
+	}
+
+	const bool bSent = jc->is_switch2 ? jc->set_sw2_player_lights(0) : jc->set_switch_player_lights(0);
+	UE_LOG(LogJoyShockLibrary, Log, TEXT("Player lights of device %d cleared on exit: %s"),
+		jc->intHandle, bSent ? TEXT("sent") : TEXT("not sent"));
+}
+
 static void finish_polling_thread(JoyShock* jc, FJoyShockLibrary4UnrealModule& JSL4UModule,
 	bool bReceivedInput, bool lockedThread, int numTimeOuts)
 {
@@ -1046,6 +1069,11 @@ void pollIndividualLoop(JoyShock *jc) {
 				// recovers for free on its next report.
 			}
 		}
+	}
+
+	if (jc->cancel_thread)
+	{
+		clear_player_lights_on_exit(jc);
 	}
 
 	finish_polling_thread(jc, JSL4UModule, bReceivedInput, lockedThread, numTimeOuts);

@@ -55,6 +55,11 @@ runs by itself when the game shuts down.
 same player. **JSL4U Set Player Indicator** overrides the number shown until the next assignment change. On
 a DualShock 4, which has no numeric indicator, it does nothing.
 
+**Closing Unreal turns a Nintendo controller's player lights off,** so a Joy-Con or Pro Controller left on
+the cable does not keep showing a player as if something still owned it. An editor closing while a game it
+launched is still running leaves them alone: they show the game's players. The DualSense keeps its last
+pattern.
+
 **JSL4U Set Light Color** sets the DualShock 4 and DualSense light bar.
 
 **The HOME light** is Nintendo's blue notification light, not a player number. A controller can keep it lit
