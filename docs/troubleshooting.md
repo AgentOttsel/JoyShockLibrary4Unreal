@@ -76,3 +76,23 @@ It is **on** by default, and it lets a gamepad move the editor's own focus aroun
 are testing with is also tabbing through panels behind the viewport, and a stick flick can land somewhere
 you did not intend. With two controllers connected it is worse, because both are doing it. The setting is
 the editor's, not this plugin's, and it does not affect a packaged game.
+
+Which controller moves it depends on focus, not on the controller. To the editor's interface every
+player is a separate user with a focus of its own, numbered like the players: the player 1 controller is
+user 0, and user 0 shares its focus with the mouse and keyboard. So the player 1 controller navigates from
+wherever you last clicked -- after a click in the level viewport, no blue frame shows in the menus --
+while the other players' controllers each move a focus of their own, wherever it was left. A joined Joy-Con pair is one
+player, so its halves move the same focus.
+
+### A Standalone game in front of the editor
+
+While no editor window is in front and no Play-In-Editor session is running, the editor keeps its
+controllers connected but hands none of their input to Unreal, so a Standalone game launched from it is
+the only thing the controller drives. Held buttons and sticks are released at that moment, and input
+resumes as soon as an editor window comes back to the front. The Output Log says when either happens.
+A game, packaged or Standalone, keeps Unreal's default and still answers its controllers from the
+background.
+
+While any game with this plugin is running on the same PC, the editor also leaves every controller's
+player lights, light bar and rumble to that game, so the lights always show the game's players. The
+editor sends its own again when the game closes.

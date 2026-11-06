@@ -418,7 +418,9 @@ static void bring_devices_online(const TArray<JoyShock*>& DevicesToBringOnline)
 		// DS4 has no separate player indicator, but its RGB light bar and rumble start in the same report.
 		// This is safe before its polling thread exists. All later output, including every numeric player
 		// indicator, is written by that controller's polling thread.
-		if (jc->controller_type == ControllerType::s_ds4)
+		// Not from an editor with a game running beside it, which leaves the light to the game (see
+		// send_pending_output_reports); the polling thread sends it once the game closes.
+		if (jc->controller_type == ControllerType::s_ds4 && !Switch2Ble::IsYieldedToGame())
 		{
 			jc->set_ds4_rumble_light(0, 0, jc->led_r, jc->led_g, jc->led_b);
 		}

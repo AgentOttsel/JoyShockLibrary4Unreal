@@ -157,6 +157,10 @@ private:
 	bool bIsGamepadAttached;
 	const FName JoyShockControllerName = FName("JoyShock");
 
+	// Whether the previous SendControllerEvents dispatched input. Its falling edge is when held input has to
+	// be released, since nothing will be dispatched again until it rises.
+	bool bDispatchedInputLastTick = true;
+
 	static FString GetDeviceName(int32 InControllerId);
 	static FName GetHardwareDeviceIdentifier(int32 InControllerId);
 
@@ -256,6 +260,10 @@ private:
 	// vanished controller would otherwise leave its input held down for the rest of the session. Must run on
 	// the game thread, with ControllerContainerLock held and the device still mapped to its platform user.
 	void ReleaseAllInput(FControllerState& State);
+
+	// False only in the editor, while none of its windows is in front and no Play-In-Editor session runs. See
+	// the definition for why the editor holds input back and a game does not.
+	static bool ShouldDispatchInput();
 
 	void UpdateJoyConGripTransitions(TArray<FJoyConPairingChange>& OutPairingChanges);
 	FJoyConPairingChange MakeJoyConPairingChange(int32 HandleA, int32 HandleB, bool bJoined) const;

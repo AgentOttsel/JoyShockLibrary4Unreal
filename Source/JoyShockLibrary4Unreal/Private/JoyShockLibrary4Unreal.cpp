@@ -77,7 +77,7 @@ static void UpdateBluetoothClaim(FJoyShockLibrary4UnrealModule& Module)
 	if (bClaimed)
 	{
 		UE_LOG(LogJoyShockLibrary, Log,
-			TEXT("A game with this plugin is running on this PC: the editor is releasing its Switch 2 controllers on Bluetooth to it, and stops looking for more until it closes."));
+			TEXT("A game with this plugin is running on this PC: the editor is releasing its Switch 2 controllers on Bluetooth to it, leaves every controller's lights and rumble to it, and stops looking for more until it closes."));
 		// The polling threads see the flag on their next report and retire their controllers; stopping the
 		// scan here is what keeps the editor from taking them straight back when they advertise for the game.
 		Switch2Ble::StopScan();
@@ -85,7 +85,7 @@ static void UpdateBluetoothClaim(FJoyShockLibrary4UnrealModule& Module)
 	else
 	{
 		UE_LOG(LogJoyShockLibrary, Log,
-			TEXT("The game that had the Bluetooth controllers closed: the editor is looking for them again. Press a button on a controller to bring it back."));
+			TEXT("The game that had the Bluetooth controllers closed: the editor is looking for them again, and sends its own lights and rumble to every controller. Press a button on a Bluetooth controller to bring it back."));
 		// The enumeration pass restarts the scan, on its own thread, where a blocking adapter call costs nothing.
 		Module.RequestConnectDevices();
 	}

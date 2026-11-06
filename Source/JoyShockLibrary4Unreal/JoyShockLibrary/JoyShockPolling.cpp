@@ -69,6 +69,10 @@ struct FPolledOutputState
 	int32 lastSentPlayerNumber;
 
 	bool bHomeLightCleared = false;
+
+	// Whether the previous call left the outputs to a game running beside the editor (see the top of
+	// send_pending_output_reports), so the call after it knows the game has gone.
+	bool bYieldedToGame = false;
 };
 
 // Paces a mode recovery that has to be repeated for as long as a controller keeps streaming the wrong report:
@@ -176,6 +180,34 @@ static bool SwitchControllerTransport(JoyShock* jc, const FString& NewPath, bool
 // input packet.
 static void send_pending_output_reports(JoyShock* jc, FPolledOutputState& out)
 {
+	// An editor with a game running beside it writes nothing. Both processes read the same HID controllers,
+	// and each keeps its own player list, so both wrote player lights to the same controller: two halves of a
+	// pair joined in both processes at once and ended up showing two different players, depending on whose
+	// write landed last. The game is what is being played, so its lights and rumble are the ones that count --
+	// the same call the editor already makes for the Switch 2 Bluetooth link, from the same flag, which only
+	// the editor ever sets (see Switch2Ble::SetYieldedToGame).
+	if (Switch2Ble::IsYieldedToGame())
+	{
+		out.bYieldedToGame = true;
+		if (jc->is_switch2)
+		{
+			// Holding the USB command interface would keep the game from its LEDs and rumble.
+			jc->release_sw2_command_interface_if_idle();
+		}
+		return;
+	}
+	if (out.bYieldedToGame)
+	{
+		// The game has closed, and the controller still shows what the game last sent. Forget what this
+		// thread sent before it, so each output below goes out once more with the editor's own values. All of
+		// them are single write-only reports, which are safe to repeat on a live Bluetooth stream; the HOME
+		// light's clear is a subcommand and is deliberately not among them (see below).
+		out.bYieldedToGame = false;
+		out.lastSentPlayerNumber = INT32_MIN;
+		out.lastSentSmallRumble = 0xFF;
+		out.lastSentBigRumble = 0xFF;
+	}
+
 	// Player indicators are assigned from Unreal's actual player slot, not from HID enumeration order.
 	// The game thread stores the semantic one-based player number; this polling thread remains the sole
 	// writer to both Nintendo command pipes, keeping LED changes serialised with rumble.

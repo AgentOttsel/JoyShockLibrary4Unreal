@@ -10,6 +10,10 @@
 #include "JoyShockBlueprintLibrary.h"
 #include "Misc/ConfigCacheIni.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformApplicationMisc.h"
+#if WITH_EDITOR
+#include "Engine/Engine.h"
+#endif
 #include <functional>
 #include <mutex>
 #include <shared_mutex>
@@ -339,6 +343,21 @@ void FJoyShockInterface::SendControllerEvents()
 	bIsGamepadAttached = !DeviceHandles.IsEmpty();
 	UpdateJoyConGripTransitions(PairingChanges);
 
+	const bool bDispatchInput = ShouldDispatchInput();
+	const bool bInputJustHeldBack = !bDispatchInput && bDispatchedInputLastTick;
+	if (bDispatchInput != bDispatchedInputLastTick)
+	{
+		if (bDispatchInput)
+		{
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("An editor window is in front again: controller input reaches the editor."));
+		}
+		else
+		{
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("No editor window is in front: controller input is held back from the editor until one is."));
+		}
+	}
+	bDispatchedInputLastTick = bDispatchInput;
+
 	for (int32 Index = DeviceHandles.Num() - 1; Index >= 0; Index--)
 	{
 		int32 DeviceHandle = DeviceHandles[Index];
@@ -367,6 +386,51 @@ void FJoyShockInterface::SendControllerEvents()
 				ControllerState.bReportedInputStall = false;
 				UE_LOG(LogJoyShockLibrary, Warning, TEXT("Device %d (%s) is delivering input reports again."),
 					DeviceHandle, *ControllerState.DeviceName);
+			}
+
+			if (!bDispatchInput)
+			{
+				// Released once, on the frame input stops, for the reason ReleaseAllInput gives for a
+				// disconnect: the editor would otherwise keep whatever was held when it lost the front.
+				if (bInputJustHeldBack)
+				{
+					ReleaseAllInput(ControllerState);
+				}
+				else
+				{
+					// Previous follows current while nothing is dispatched, so the first frame back compares
+					// against what the controller is really doing now -- not against the moment input stopped,
+					// which would replay every press and release made in between.
+					FScopeLock Lock(&SimpleStateLock);
+					ControllerState.PreviousSimpleState = ControllerState.SimpleState;
+					ControllerState.PreviousIMUState = ControllerState.IMUState;
+					ControllerState.bAnalogWasJoyConHorizontal = ControllerState.bJoyConHorizontal;
+					ControllerState.bButtonsWereJoyConHorizontal = ControllerState.bJoyConHorizontal;
+				}
+				if (!bInputJustHeldBack)
+				{
+					FScopeLock Lock(&TouchStateLock);
+					ControllerState.PreviousTouchState = ControllerState.TouchState;
+				}
+
+				// The mouse sensor's axes are not part of ReleaseAllInput (it is only fed below), so they are
+				// zeroed here; and its deltas accumulate until consumed, so they are drained and dropped, or the
+				// first frame back would jump by everything moved meanwhile.
+				const bool bMouseLeft = IsJoyConLeftIdentifier(ControllerState.HardwareDeviceIdentifier);
+				const bool bMouseRight = IsJoyConRightIdentifier(ControllerState.HardwareDeviceIdentifier);
+				if (bMouseLeft || bMouseRight)
+				{
+					float DroppedDeltaX = 0.f;
+					float DroppedDeltaY = 0.f;
+					UJoyShockLibrary::ConsumeMouseAxisDeltaForHandle(DeviceHandle, DroppedDeltaX, DroppedDeltaY);
+					OnControllerAnalog(ControllerState.PlatformUser, ControllerState.InputDevice,
+						bMouseLeft ? MouseLeftXKeyName : MouseRightXKeyName, 0.f, ControllerState.PreviousMouseDeltaX);
+					OnControllerAnalog(ControllerState.PlatformUser, ControllerState.InputDevice,
+						bMouseLeft ? MouseLeftYKeyName : MouseRightYKeyName, 0.f, ControllerState.PreviousMouseDeltaY);
+					ControllerState.PreviousMouseDeltaX = 0.f;
+					ControllerState.PreviousMouseDeltaY = 0.f;
+				}
+				continue;
 			}
 
 			{
@@ -1134,6 +1198,39 @@ void FJoyShockInterface::ReleaseAllInput(FControllerState& State)
 	// an IMU, because every controller this plugin supports has one.
 	MessageHandler->OnMotionDetected(FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector,
 		FVector::ZeroVector, PlatformUser, InputDevice);
+}
+bool FJoyShockInterface::ShouldDispatchInput()
+{
+#if WITH_EDITOR
+	// A Standalone game launched from the editor is a second process holding the same controllers, and the
+	// engine dispatches gamepad input whether or not its application is in front (Slate.RequireFocusForGamepadInput
+	// defaults off). So the editor behind the game was driving its own menus with the player's controller --
+	// Slate's navigation frame walking across the editor while the game was being played.
+	//
+	// The editor stays connected and keeps reading; it only stops handing input to Unreal. Disconnecting
+	// would cost the reconnect and its player slot when the editor comes back to the front.
+	//
+	// Not in a game, which keeps the engine's default: whether a game in the background should still answer
+	// its controllers is the game's decision. And not during Play-In-Editor, where the game runs inside the
+	// editor process, so holding input back from the editor would hold it back from the game too.
+	if (!GIsEditor || FPlatformApplicationMisc::IsThisApplicationForeground())
+	{
+		return true;
+	}
+	if (GEngine != nullptr)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (Context.WorldType == EWorldType::PIE)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+#else
+	return true;
+#endif
 }
 bool FJoyShockInterface::OnDisconnectCallback(int32 InDeviceHandle, bool bInHasTimedOut,
 	TArray<FJoyConPairingChange>& OutPairingChanges)
