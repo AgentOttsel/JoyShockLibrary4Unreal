@@ -663,7 +663,20 @@ bool JoyShock::init_switch2() {
 
 		unsigned char spi[64];
 		// Block 0x013000: serial, ids, then body/buttons/left-grip/right-grip RGB colours at offset 0x19.
-		if (SpiRead(0x013000, spi))
+		//
+		// Read twice if need be. With the controller already on the cable when a Standalone started beside the
+		// editor (2026-11-06, reproduced on purpose), this first transfer on the freshly opened interface
+		// failed while every read after it in the same init succeeded -- consistent with a reply left in the
+		// pipe by its previous owner. Losing this block costs more than colours: without the serial the
+		// controller cannot be recognised, so its first trip between cable and Bluetooth hands its player to
+		// whichever controller arrives next and brings it back as a new one.
+		bool bReadInfoBlock = SpiRead(0x013000, spi);
+		if (!bReadInfoBlock)
+		{
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2: the info block read failed on the first try; retrying once.\n"));
+			bReadInfoBlock = SpiRead(0x013000, spi);
+		}
+		if (bReadInfoBlock)
 		{
 			body_colour = (spi[0x19] << 16) | (spi[0x1A] << 8) | spi[0x1B];
 			button_colour = (spi[0x1C] << 16) | (spi[0x1D] << 8) | spi[0x1E];
