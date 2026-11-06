@@ -31,7 +31,7 @@ Each Blueprint does one standard engine job, so the parts are easy to lift into 
 |---|---|
 | `BP_JoyShockInitializer` | The only one that reacts to controllers. On `BeginPlay` it places one **Wait For Controller Changes** and one **Wait For Joy-Con Pairing Changes**, both feeding the same function: **Ensure Local Player For Controller**, add the Mapping Context, and spawn and possess a Character only if that player has none. Reconnections and Joy-Con separations all go through that one path, so they never produce duplicate Pawns |
 | `BP_JoyShockGameMode` | Only `DefaultPawnClass` and `PlayerControllerClass`. The level has separate `PlayerStart` actors |
-| `BP_JoyShockPlayerController` | Empty on purpose: routing, possession and Enhanced Input need nothing in it |
+| `BP_JoyShockPlayerController` | Only a rumble test, shared by both levels: **L** plays a short, light pulse (intensity 0.2) and **R** a short, strong one (1.0), each for 0.3 s, through Unreal's **Play Dynamic Force Feedback**. Routing, possession and Enhanced Input need nothing else in it |
 | `BP_JoyShockCharacter` | Gameplay input, plus **Set Focus to Game Viewport** one tick after possession, which the Play viewport needs for a second player (see [Testing in the editor](troubleshooting.md#testing-in-the-editor)) |
 | `BP_JoyShockControllerMirror` | The 3D mirror of one controller |
 | `WBP_JoyShockHUD` and its widgets | The motion readings and calibration controls |
