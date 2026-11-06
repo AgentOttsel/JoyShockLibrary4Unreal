@@ -358,6 +358,14 @@ public:
 	uint32 left_grip_colour = 0xFFFFFF;
 	uint32 right_grip_colour = 0xFFFFFF;
 
+	// The Switch 2 info block's bytes before the colours (serial and ids), as hex. The same block is read over
+	// the cable and over Bluetooth, so this names one physical controller across both -- which its HID path
+	// cannot, and a MAC cannot either, since the cable exposes none. It is what lets a Pro Controller 2 moving
+	// between the two stay one controller to the game. Empty until the block has been read, and for every
+	// other family. Guarded by modifying_lock.
+	FString sw2_info_identity;
+	void set_sw2_info_identity(const uint8* InfoBlock);
+
 	int32 player_number = 0;
 	int32 reuse_counter = 0;
 

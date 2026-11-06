@@ -46,6 +46,15 @@ void UJoyShockSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		LastControllerInfoByDeviceId.Remove(DeviceId);
 	});
 
+	// A controller that moved between cable and Bluetooth goes on under a new handle and raises no event a
+	// game sees. The cache is keyed by handle, so it has to follow, or that controller's eventual disconnect
+	// would find no description and leave as an empty one.
+	HandedOverHandle = JSL4UModule.GetOnDeviceHandedOver().AddWeakLambda(this, [this](int32 OldDeviceId, int32 NewDeviceId)
+	{
+		LastControllerInfoByDeviceId.Remove(OldDeviceId);
+		LastControllerInfoByDeviceId.Add(NewDeviceId, UJoyShockLibrary::GetControllerInfoForHandle(NewDeviceId));
+	});
+
 	PairingChangedHandle = JSL4UModule.GetOnJoyConPairingChanged().AddWeakLambda(this,
 		[this](int32 LeftDeviceId, int32 RightDeviceId, bool bJoined)
 		{
@@ -284,6 +293,7 @@ void UJoyShockSubsystem::Deinitialize()
 		JSL4UModule.GetOnDeviceDisconnected().Remove(DisconnectedHandle);
 		JSL4UModule.GetOnJoyConPairingChanged().Remove(PairingChangedHandle);
 		JSL4UModule.GetOnDeviceFunctionBlocked().Remove(FunctionBlockedHandle);
+		JSL4UModule.GetOnDeviceHandedOver().Remove(HandedOverHandle);
 
 		// Rumble is sustained by the polling threads, which belong to the module and keep running after the
 		// game stops -- so a controller still rumbling when the game ends would rumble until something set

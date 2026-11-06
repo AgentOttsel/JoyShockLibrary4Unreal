@@ -99,6 +99,13 @@ public:
 	// name the controller the way the public API does.
 	int64 GetConnectionForHandle(int32 Handle) const;
 
+	// Pro Controllers 2 parked on their way between cable and Bluetooth (see FParkedSwitch2), described as
+	// they were when they left. To a game they are still connected, only silent for a moment: listing them as
+	// gone, or letting the engine's still-mapped device read as someone else's pad, is what made a game spawn
+	// a second controller for them.
+	TArray<FJSL4UControllerInfo> GetParkedControllerInfos() const;
+	bool IsParkedConnection(int64 ConnectionId) const;
+
 private:
 	FJoyShockInterface(const TSharedRef<FGenericApplicationMessageHandler>& MessageHandler);
 
@@ -116,6 +123,14 @@ private:
 
 		// Readable device name, cached at connect time so we don't re-query it (under a lock) every frame.
 		FString DeviceName;
+
+		// A Pro Controller 2's identity across cable and Bluetooth (JoyShock::sw2_info_identity), cached at
+		// connect time: by the time its disconnect is handled the library has already freed the device.
+		FString Switch2Identity;
+
+		// The controller's description as of its connect, kept for the one case that needs it after the
+		// library has let the device go: a parked Pro Controller 2 (see FParkedSwitch2).
+		FJSL4UControllerInfo LastInfo;
 
 		// Diagnostic only: when this device last delivered an input report to the interface, and whether a
 		// stall has already been reported for it. This distinguishes the two ways input can appear to "stop
@@ -197,6 +212,45 @@ private:
 	void RefreshPlayerAssignments();
 
 	int64 NextConnectionId = 1;
+
+	// A Pro Controller 2 moving between cable and Bluetooth cannot keep its link the way a DualShock 4 does:
+	// the cable ends the Bluetooth link, and pulling it means a new Bluetooth connection from scratch. So the
+	// one that just left is held here, its disconnect not yet announced, its Connection Id, input device and
+	// player slot kept, until the same controller arrives on the other transport -- which then carries on as
+	// it, with nothing announced either way -- or the grace runs out and the disconnect goes out after all.
+	struct FParkedSwitch2
+	{
+		FString Identity;
+		int32 DeviceHandle = INDEX_NONE;
+		int64 ConnectionId = 0;
+		FPlatformUserId PlatformUser = PLATFORMUSERID_NONE;
+		FInputDeviceId InputDevice = INPUTDEVICEID_NONE;
+		int32 PlayerSlot = INDEX_NONE;
+		bool bTimedOut = false;
+		double ParkedAt = 0.0;
+		FJSL4UControllerInfo Info;
+	};
+	TArray<FParkedSwitch2> ParkedSwitch2s;
+	// Measured on 2026-11-06: 3.5 s from Bluetooth to the cable, 4.6 s back. Long enough for a slow day,
+	// short enough that a controller switched off is reported gone soon.
+	static constexpr double Switch2HandoverGraceSeconds = 10.0;
+	// Filled while the connect drain carries a parked controller on under a new handle; broadcast with the
+	// other connection events once the drain has finished.
+	TArray<TPair<int32, int32>> HandoversThisTick;
+	// Parked controllers whose disconnect is finally due (handle, timed out), announced with this tick's
+	// other disconnects.
+	TArray<TPair<int32, bool>> RetiredThisTick;
+	// Pro Controllers 2 whose connect is waiting for their identity, by handle, with when they first arrived.
+	// Game thread only.
+	TMap<int32, double> DeferredSwitch2Connects;
+
+	// Parks the controller instead of letting it disconnect, when it is one that may be on its way to its other
+	// transport. Returns false for everything else, which then disconnects as usual. ControllerContainerLock held.
+	bool TryParkSwitch2(int32 DeviceHandle, FControllerState& State, bool bTimedOut);
+	// Finishes the disconnect of a parked controller: the part of OnDisconnectCallback that parking put off.
+	// The caller removes it from ParkedSwitch2s and then refreshes the player assignments, which is what
+	// frees its slot. ControllerContainerLock held.
+	void RetireParkedSwitch2(const FParkedSwitch2& Parked);
 
 	// Returns the primary (lower) handle of the logical controller this handle belongs to.
 	int32 GetGroupPrimary(int32 Handle) const;
@@ -287,7 +341,7 @@ private:
 	// Acceleration), so gyro is bindable in Enhanced Input without any plugin-specific code.
 	void ProcessIMUState(int32 DeviceHandle, const FIMUState& InIMUState, FPlatformUserId PlatformUser, FInputDeviceId InputDevice) const;
 
-	bool OnConnectCallback(int32 InDeviceHandle);
+	bool OnConnectCallback(int32 InDeviceHandle, bool bAllowDeferral = true);
 
 	// Losing one half of a joined pair separates it, exactly as SL+SR or JSL4UUnjoinJoyCon would, so the
 	// separation has to be reported like any other. The change is handed back rather than broadcast here

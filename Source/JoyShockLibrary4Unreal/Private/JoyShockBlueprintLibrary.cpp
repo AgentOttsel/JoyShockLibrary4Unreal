@@ -294,7 +294,8 @@ static int32 HandleForConnection(int64 ConnectionId)
 	// zeroes are the honest answer for hardware without the sensor. Anything else reaching here is an id
 	// that names no live controller of ours: an uninitialised 0, or one whose controller is gone. Said once
 	// per id, so a getter in a Tick cannot bury the log.
-	if (Handle == INDEX_NONE && ConnectionId >= 0)
+	// A parked Pro Controller 2 reads zeroes for a few seconds on purpose; that is not an unservable id.
+	if (Handle == INDEX_NONE && ConnectionId >= 0 && !(Interface != nullptr && Interface->IsParkedConnection(ConnectionId)))
 	{
 		static const TCHAR* ReadingSite = TEXT("JSL4U reading");
 		bool bAlreadyWarned = false;
@@ -430,6 +431,14 @@ TArray<FJSL4UControllerInfo> UJoyShockLibrary::JSL4UGetConnectedControllers()
 		{
 			Result.Add(MoveTemp(Entry.Value));
 		}
+	}
+
+	// A Pro Controller 2 parked between cable and Bluetooth is still connected as far as the game knows; left
+	// out, it vanished from this list for a few seconds and its still-mapped device came back from Get All
+	// Connected Controllers as an undriven pad.
+	if (Interface != nullptr)
+	{
+		Result.Append(Interface->GetParkedControllerInfos());
 	}
 
 	// Connection order, which is what the ids count. It used to be handle order, and for the plugin's own
@@ -1510,6 +1519,17 @@ FJSL4UControllerInfo UJoyShockLibrary::JSL4UGetControllerInfo(int64 ConnectionId
 		return JSL4UDescribeUndrivenDevice(DeviceMapper.GetUserForInputDevice(InputDevice), InputDevice);
 	}
 
+	if (FJoyShockInterface* Interface = FJoyShockLibrary4UnrealModule::GetInstance().GetActiveInterface())
+	{
+		for (const FJSL4UControllerInfo& Parked : Interface->GetParkedControllerInfos())
+		{
+			if (Parked.ConnectionId == ConnectionId)
+			{
+				return Parked;
+			}
+		}
+	}
+
 	return GetControllerInfoForHandle(HandleForConnection(ConnectionId));
 }
 
@@ -1528,6 +1548,23 @@ FJSL4URawSettings UJoyShockLibrary::GetControllerSettingsForHandle(int32 deviceI
 }
 
 // what split type of controller is this?
+FString UJoyShockLibrary::GetSwitch2IdentityForHandle(int32 deviceId)
+{
+	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
+
+	std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._connectedLock);
+
+	JoyShock* jc = GetJoyShockFromHandle(deviceId);
+	if (jc == nullptr || !jc->is_switch2)
+	{
+		return FString();
+	}
+	jc->modifying_lock.Lock();
+	const FString Identity = jc->sw2_info_identity;
+	jc->modifying_lock.Unlock();
+	return Identity;
+}
+
 int32 UJoyShockLibrary::GetControllerTypeForHandle(int32 deviceId)
 {
 	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();

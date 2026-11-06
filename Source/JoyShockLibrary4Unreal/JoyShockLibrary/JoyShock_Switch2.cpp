@@ -333,6 +333,30 @@ bool JoyShock::read_sw2_ble_memory(uint32 address, int32 length, TArray<uint8>& 
 		intHandle, address, length, *Failure);
 	return false;
 }
+void JoyShock::set_sw2_info_identity(const uint8* InfoBlock)
+{
+	// Everything before the colours at 0x19: serial and ids. A read that came back erased or empty says
+	// nothing about which controller this is, and two controllers would match on it, so it is not kept.
+	bool bAllSame = true;
+	for (int32 i = 1; i < 0x19; ++i)
+	{
+		bAllSame &= InfoBlock[i] == InfoBlock[0];
+	}
+	if (bAllSame)
+	{
+		return;
+	}
+
+	FString Identity;
+	for (int32 i = 0; i < 0x19; ++i)
+	{
+		Identity += FString::Printf(TEXT("%02x"), InfoBlock[i]);
+	}
+	modifying_lock.Lock();
+	sw2_info_identity = Identity;
+	modifying_lock.Unlock();
+}
+
 bool JoyShock::init_switch2_bluetooth() {
 	if (ble_connection == nullptr)
 	{
@@ -409,6 +433,7 @@ bool JoyShock::init_switch2_bluetooth() {
 		left_grip_colour = (Block[0x1F] << 16) | (Block[0x20] << 8) | Block[0x21];
 		right_grip_colour = (Block[0x22] << 16) | (Block[0x23] << 8) | Block[0x24];
 		UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 colours: body %06x, buttons %06x\n"), body_colour, button_colour);
+		set_sw2_info_identity(Block.GetData());
 	}
 
 	// Three packed 12-bit pairs: the centre, then the distance to each end of travel. Same layout the USB
@@ -520,6 +545,20 @@ bool JoyShock::init_switch2() {
 	// Command format: [command_id] 0x91 0x00 [subcommand_id] 0x00 [data_len] 0x00 0x00 [data...].
 	// (Over Bluetooth LE byte 2 is 0x01 instead; sending that over USB makes it search for a BT host.)
 #if PLATFORM_WINDOWS
+	// An editor with a game running beside it leaves the command interface to the game. Only one process can
+	// hold it, both see the cable arrive, and the editor won by a few milliseconds every time -- leaving the
+	// game, the one being played, without stick calibration or identity for the two seconds until the editor
+	// let go: long enough for the fixed-centre fallback to walk a character off on its own, and for a Pro
+	// Controller 2 coming off Bluetooth to be announced as a new controller. The polling thread's retry picks
+	// the init up once the game has closed.
+	if (Switch2Ble::IsYieldedToGame())
+	{
+		sw2_init_succeeded = false;
+		sw2_init_lacked_interface = true;
+		this->initialised = true;
+		return false;
+	}
+
 	UE_LOG(LogJoyShockLibrary, Log, TEXT("Running Switch 2 (WinUSB) init sequence...\n"));
 
 	if (!sw2_open_winusb())
@@ -631,6 +670,7 @@ bool JoyShock::init_switch2() {
 			left_grip_colour = (spi[0x1F] << 16) | (spi[0x20] << 8) | spi[0x21];
 			right_grip_colour = (spi[0x22] << 16) | (spi[0x23] << 8) | spi[0x24];
 			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 colours: body %06x, buttons %06x\n"), body_colour, button_colour);
+			set_sw2_info_identity(spi);
 		}
 
 		// The player's own calibration, written by the console's stick-correction screen, wins over the

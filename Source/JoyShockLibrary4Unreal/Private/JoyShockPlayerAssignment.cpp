@@ -322,6 +322,17 @@ void FJoyShockInterface::RefreshPlayerAssignments()
 			// controller claimed player 0 even with an Xbox pad already sitting there, and both drove the
 			// same character. Skipping occupied slots is what makes a JoyShock controller land where a
 			// second Xbox pad would have, so a game does not need one scheme for XInput and another for us.
+			// A Pro Controller 2 parked on its way between cable and Bluetooth still owns its slot.
+			if (!bSlotTaken && ParkedSwitch2s.ContainsByPredicate([Slot](const FParkedSwitch2& Parked)
+				{
+					return Parked.PlayerSlot == Slot;
+				}))
+			{
+				bSlotTaken = true;
+				++Slot;
+				continue;
+			}
+
 			if (!bSlotTaken && IsPlayerSlotClaimedByAnotherDevice(Slot))
 			{
 				bSlotTaken = true;

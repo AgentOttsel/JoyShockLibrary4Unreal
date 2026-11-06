@@ -823,7 +823,9 @@ void pollIndividualLoop(JoyShock *jc) {
 			// it takes. An init that held the interface and still had commands fail is different: each try
 			// is a dozen bulk transfers on this thread, so it gets three.
 			if (jc->is_switch2 && !jc->is_ble() && !jc->sw2_init_succeeded
-				&& (jc->sw2_init_lacked_interface || sw2InitRetriesWithInterface < 3))
+				&& (jc->sw2_init_lacked_interface || sw2InitRetriesWithInterface < 3)
+				// Not while the editor is leaving the interface to a game (see init_switch2).
+				&& !Switch2Ble::IsYieldedToGame())
 			{
 				const auto now = std::chrono::steady_clock::now();
 				if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSw2InitRetryTime).count() >= 2000)

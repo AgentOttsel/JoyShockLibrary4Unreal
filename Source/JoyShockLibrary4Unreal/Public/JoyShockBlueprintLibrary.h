@@ -501,6 +501,10 @@ public:
 	// what kind of controller is this?
 	static int32 GetControllerTypeForHandle(int32 deviceId);
 
+	// Names one physical Switch 2 controller the same way over the cable and over Bluetooth (see
+	// JoyShock::sw2_info_identity). Empty when it is not known, which matches nothing.
+	static FString GetSwitch2IdentityForHandle(int32 deviceId);
+
 	// The mouse sensor's movement since the engine's input axes were last given it, in sensor counts. Not a
 	// Blueprint node: this is the feed behind the JoyShock Mouse axis keys, and it keeps its own baseline
 	// so a game reading Consume Switch 2 Mouse Delta and a game binding the axis key see the same motion
