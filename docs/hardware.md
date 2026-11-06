@@ -38,7 +38,7 @@ Between the two of us we cover most of the table above:
 
 | Who | Has | Worth knowing |
 | --- | --- | --- |
-| [@AgentOttsel](https://github.com/AgentOttsel) | One of every controller in the table above: DualShock 4, DualSense ×2, DualSense Edge, a Joy-Con pair, a Joy-Con 2 pair, both Pro Controllers. Plus Xbox Series X ×2, a Steam Controller and an 8BitDo Pro 2 | The whole matrix, including the two families nobody else here can reach. Runs Unreal from Visual Studio with the debugger attached, so asserts and shutdown crashes that a plain editor session swallows do get caught |
+| [@AgentOttsel](https://github.com/AgentOttsel) | One of every controller in the table above: DualShock 4, DualSense ×2, DualSense Edge, a Joy-Con pair, a Joy-Con 2 pair, both Pro Controllers. Plus Xbox Series X ×2, a Steam Controller, an 8BitDo Pro 2 and a Switch 2 console | The whole matrix, including the two families nobody else here can reach. The console is the only way to test a Switch 2 controller bonded to another device. Runs Unreal from Visual Studio with the debugger attached, so asserts and shutdown crashes that a plain editor session swallows do get caught |
 | [@uayten](https://github.com/uayten) | Joy-Con ×4, Pro Controller 2, DualShock 4, an XInput pad | **Four Joy-Con halves**, so joining, separation and four-player assignment are testable here and nowhere else. Two of his pads have **stick drift**, which is the only way anyone here reproduces a worn controller — deadzone and calibration behaviour that new hardware cannot show. Runs the editor plainly, so a failure that only stops a debugger goes unnoticed |
 
 A report from either of them is worth more than any amount of code review, and so is one from you — if
