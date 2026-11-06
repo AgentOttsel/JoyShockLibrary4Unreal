@@ -85,7 +85,7 @@ Enhanced Input instead.
 | Node | What it does |
 |---|---|
 | **JSL4U Get Controller State** | Buttons, sticks and triggers of one controller |
-| **JSL4U Get Left Stick** / **JSL4U Get Right Stick** | One stick's position, -1 to 1 |
+| **JSL4U Get Left Stick** / **JSL4U Get Right Stick** | One stick's position, -1 to 1, up and right positive; a sideways Joy-Con's stick turned into its grip, as its left stick |
 
 ### Motion
 

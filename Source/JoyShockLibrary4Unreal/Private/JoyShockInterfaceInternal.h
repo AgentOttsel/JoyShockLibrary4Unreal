@@ -15,4 +15,3 @@
 // the pairing path agree on one answer.
 bool IsJoyConLeftIdentifier(const FName& Identifier);
 bool IsJoyConRightIdentifier(const FName& Identifier);
-bool IsSonyIdentifier(const FName& Identifier);

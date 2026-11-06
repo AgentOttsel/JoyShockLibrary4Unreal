@@ -188,19 +188,6 @@ static bool parse_switch2_report(JoyShock* jc, uint8_t* packet, int32 len, FIMUS
 			jc->simple_state.stickRX = normStickFallback(rx);
 			jc->simple_state.stickRY = normStickFallback(ry);
 		}
-		// The right slot's Y axis is reported inverted relative to the left one's (confirmed on a Pro
-		// Controller 2), so negate it to make up positive on both sticks.
-		//
-		// Only on a whole controller. A right Joy-Con's stick is normalised once, in FJoyShockInterface,
-		// exactly as the Switch 1 right half's is -- the note on the Switch 1 Pro's branch further down
-		// spells out why the two places must not both do it. Doing it here as well cancelled out, which
-		// is what sent a Joy-Con 2 (R) up as down in the vertical grip and left as right in the
-		// horizontal one (reported on hardware; the left half was unaffected because it never reaches
-		// this branch).
-		if (bWhole)
-		{
-			jc->simple_state.stickRY = -jc->simple_state.stickRY;
-		}
 	}
 
 	// Switch controllers only report ZL/ZR digitally; surface them as full triggers when pressed.
@@ -435,12 +422,12 @@ static bool parse_ds4_report(JoyShock* jc, uint8_t* packet, int32 len, FIMUState
 		if (jc->simple_state.lTrigger > 0.0) jc->simple_state.buttons |= JSMASK_ZL;
 
 		uint16_t stick_x = packet[indexOffset+1];
+		// Each Y counts from the top, so up is the low byte. Left in that sign: the stick table turns it,
+		// in JoyShockStickTable.cpp.
 		uint16_t stick_y = packet[indexOffset+2];
-		stick_y = 255 - stick_y;
 
 		uint16_t stick2_x = packet[indexOffset+3];
 		uint16_t stick2_y = packet[indexOffset+4];
-		stick2_y = 255 - stick2_y;
 
 		jc->simple_state.stickLX = (std::fmin)(1.0f, (stick_x - 127.0f) / 127.0f);
 		jc->simple_state.stickLY = (std::fmin)(1.0f, (stick_y - 127.0f) / 127.0f);
@@ -586,11 +573,9 @@ static bool parse_dualsense_report(JoyShock* jc, uint8_t* packet, int32 len, FIM
         uint16_t stick_x = packet[indexOffset + 0];
         uint16_t stick_y = packet[indexOffset + 1];
 
-	stick_y = 255 - stick_y;
-
+	// Up is the low byte, as on the DualShock 4; the stick table turns it.
 	uint16_t stick2_x = packet[indexOffset + 2];
 	uint16_t stick2_y = packet[indexOffset + 3];
-	stick2_y = 255 - stick2_y;
 
 	jc->simple_state.stickLX = (std::fmin)(1.0f, (stick_x - 127.0f) / 127.0f);
 	jc->simple_state.stickLY = (std::fmin)(1.0f, (stick_y - 127.0f) / 127.0f);
@@ -717,14 +702,6 @@ static void parse_switch_report(JoyShock* jc, uint8_t* packet, int32 len, FIMUSt
 				stick_y2,
 				jc->stick_cal_x_r,
 				jc->stick_cal_y_r);
-			// Nintendo reports the right stick's Y axis with the opposite sign from the left stick's --
-			// the same quirk the Switch 2 Pro Controller has, and the same one the right Joy-Con is
-			// corrected for in FJoyShockInterface. This is the only place it was missing, which made the
-			// Switch 1 Pro Controller the one family whose right stick pushed "up" as a negative value
-			// while every other controller pushed it positive. Only this branch (left_right == 3, a whole
-			// controller) needs it: a right Joy-Con fills stickR from the branch above and is normalised
-			// once, in the interface -- doing it here as well would cancel out.
-			jc->simple_state.stickRY = -jc->simple_state.stickRY;
 		}
 
 		// Byte 2 of the standard report carries the charge in bits 5-7 and the charging flag in bit 4.

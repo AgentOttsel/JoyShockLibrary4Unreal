@@ -39,15 +39,6 @@ bool IsJoyConRightIdentifier(const FName& Identifier)
 {
 	return Identifier == TEXT("JoyConRight") || Identifier == TEXT("JoyCon2Right");
 }
-// The two Sony pads, which share a report layout and therefore a stick convention. Kept as one test
-// because every place that cares is a place where they behave identically -- naming only the DualShock 4
-// is what left the DualSense's right stick inverted against every other controller for as long as the
-// convention has existed. Their parser branches invert the raw Y byte the same way; if a third Sony pad
-// ever arrives parsed by that same code, it belongs here too.
-bool IsSonyIdentifier(const FName& Identifier)
-{
-	return Identifier == TEXT("DualShock4") || Identifier == TEXT("DualSense");
-}
 FJoyShockInterface::FJoyConPairingChange FJoyShockInterface::MakeJoyConPairingChange(
 	int32 HandleA, int32 HandleB, bool bJoined) const
 {

@@ -76,6 +76,9 @@ public:
 	// it the left half -- answered from one locked read, so a grip change cannot be seen half-applied (which
 	// would rotate a reading the wrong way for exactly one frame). False for anything that is not a Joy-Con.
 	bool GetJoyConGrip(int32 Handle, bool& bOutHorizontal, bool& bOutIsLeft) const;
+	// The name the stick table and the pairing tests know this controller by. Public so the JSL4U stick
+	// getters present the sticks from the same row as Unreal input does.
+	static FName GetHardwareDeviceIdentifier(int32 InControllerId);
 	// Assigns this device's logical controller to a player slot, overriding the slot it was given on
 	// connection. Pass INDEX_NONE to hand it back to automatic assignment. Returns false if the handle is
 	// not a connected controller. Slots may be shared: assigning two controllers to one slot makes both
@@ -183,7 +186,6 @@ private:
 	bool bDispatchedInputLastTick = true;
 
 	static FString GetDeviceName(int32 InControllerId);
-	static FName GetHardwareDeviceIdentifier(int32 InControllerId);
 
 	// Controller states
 	TMap<int32, FControllerState> ControllerStateByDeviceHandle = {};
@@ -318,7 +320,7 @@ private:
 	
 	void ProcessButtons(int32 CurrentButtons, int32 PreviousButtons, FPlatformUserId PlatformUser, FInputDeviceId InputDevice);
 	void ProcessAnalogInputs(const FJoyShockState& SimpleState, const FJoyShockState& PreviousSimpleState,
-		bool bJoyConLeft, bool bJoyConRight, bool bSonyPad, bool bHorizontal, bool bWasHorizontal,
+		FName HardwareDeviceIdentifier, bool bHorizontal, bool bWasHorizontal,
 		FPlatformUserId PlatformUser, FInputDeviceId InputDevice);
 	// Dispatches this device's neutral state -- releases for every held button, zeroes for every off-centre
 	// axis and trigger, ends for every active touch, and zeroed motion -- then clears its cached state.

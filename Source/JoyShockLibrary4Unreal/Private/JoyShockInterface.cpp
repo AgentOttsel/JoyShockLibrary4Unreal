@@ -17,6 +17,7 @@
 
 #include "JoyShockLibrary4Unreal.h"
 #include "JoyShockInterfaceInternal.h"
+#include "JoyShockStickTable.h"
 #include "JoyShockLibrary4Unreal/JoyShockLibrary/Switch2Bluetooth.h"
 #include "JoyShockLibrary4Unreal/JoyShockLibrary/JoyShockInternal.h"
 #define LOCTEXT_NAMESPACE "JoyShockLibrary"
@@ -520,7 +521,6 @@ void FJoyShockInterface::SendControllerEvents()
 					FScopeLock Lock(&SimpleStateLock);
 					const bool bJoyConLeft = IsJoyConLeftIdentifier(ControllerState.HardwareDeviceIdentifier);
 					const bool bJoyConRight = IsJoyConRightIdentifier(ControllerState.HardwareDeviceIdentifier);
-					const bool bSonyPad = IsSonyIdentifier(ControllerState.HardwareDeviceIdentifier);
 					const int32 SuppressedButtons = ControllerState.SuppressedGripButtons;
 					int32 CurrentButtons = ControllerState.SimpleState.buttons & ~SuppressedButtons;
 					int32 PreviousButtons = ControllerState.PreviousSimpleState.buttons & ~SuppressedButtons;
@@ -531,7 +531,7 @@ void FJoyShockInterface::SendControllerEvents()
 					ProcessButtons(CurrentButtons, PreviousButtons, PlatformUser, InputDevice);
 
 					ProcessAnalogInputs(ControllerState.SimpleState, ControllerState.PreviousSimpleState,
-						bJoyConLeft, bJoyConRight, bSonyPad, ControllerState.bJoyConHorizontal,
+						ControllerState.HardwareDeviceIdentifier, ControllerState.bJoyConHorizontal,
 						ControllerState.bAnalogWasJoyConHorizontal,
 						PlatformUser, InputDevice);
 					ControllerState.bAnalogWasJoyConHorizontal = ControllerState.bJoyConHorizontal;
@@ -793,93 +793,20 @@ void FJoyShockInterface::ProcessButtons(int32 CurrentButtons, int32 PreviousButt
 }
 void FJoyShockInterface::ProcessAnalogInputs(const FJoyShockState& SimpleState,
 	const FJoyShockState& PreviousSimpleState,
-	bool bJoyConLeft,
-	bool bJoyConRight,
-	bool bSonyPad,
+	FName HardwareDeviceIdentifier,
 	bool bHorizontal,
 	bool bWasHorizontal,
 	FPlatformUserId PlatformUser,
 	FInputDeviceId InputDevice)
 {
-	auto PresentSticks = [bJoyConLeft, bJoyConRight, bSonyPad](const FJoyShockState& State, bool bStateHorizontal,
+	// Signs and the sideways grip come from the stick table, the same function the JSL4U stick getters use,
+	// so Unreal input and the getters cannot disagree. Do not add a sign here: see JoyShockStickTable.h,
+	// including why a game reads the right stick's vertical inverted and why that is not ours to undo.
+	auto PresentSticks = [HardwareDeviceIdentifier](const FJoyShockState& State, bool bStateHorizontal,
 		float& OutLeftX, float& OutLeftY, float& OutRightX, float& OutRightY)
 	{
-		if (bJoyConLeft)
-		{
-			if (bStateHorizontal)
-			{
-				// Joy-Con L is rotated counter-clockwise into the solo horizontal grip.
-				OutLeftX = -State.stickLY;
-				OutLeftY = State.stickLX;
-			}
-			else
-			{
-				OutLeftX = State.stickLX;
-				OutLeftY = State.stickLY;
-			}
-			OutRightX = 0.0f;
-			OutRightY = 0.0f;
-			return;
-		}
-
-		if (bJoyConRight)
-		{
-			// The Switch 1 right-half hardware reports its vertical stick axis with the opposite sign from
-			// Unreal's standard gamepad convention. Normalise the device-local vector first, then rotate that
-			// canonical vector only when the half is held horizontally. Keeping this device-specific here
-			// means a shared Enhanced Input mapping (including To World Space) behaves identically for a
-			// joined Joy-Con pair, DualShock/DualSense and Pro Controllers.
-			const float NormalizedStickX = State.stickRX;
-			const float NormalizedStickY = -State.stickRY;
-			if (bStateHorizontal)
-			{
-				// In the solo-horizontal grip, physical left/right comes from the opposite of the
-				// normalised vertical axis while physical up/down comes from the opposite of X. Keep this
-				// presentation transform separate from the joined-mode Y normalisation above: applying the
-				// same sign to both modes makes horizontal left/right run backwards.
-				OutLeftX = -NormalizedStickY;
-				OutLeftY = -NormalizedStickX;
-				OutRightX = 0.0f;
-				OutRightY = 0.0f;
-			}
-			else
-			{
-				OutLeftX = 0.0f;
-				OutLeftY = 0.0f;
-				OutRightX = NormalizedStickX;
-				// Negated against NormalizedStickY rather than folded into it, because that vector is also
-				// what the horizontal grip above rotates into OutLeftX -- changing it there would send solo
-				// horizontal left/right backwards, which is the trap the note in that branch describes. See
-				// the convention note at the bottom of this lambda for why the sign moved.
-				OutRightY = -NormalizedStickY;
-			}
-			return;
-		}
-
-		OutLeftX = State.stickLX;
-		OutLeftY = State.stickLY;
-		OutRightX = State.stickRX;
-		// The low-level JSL state keeps Sony's normalized convention for direct getters. End-to-end
-		// measurement at the Enhanced Input action shows a Sony pad's right Y arriving with the opposite
-		// sign from the same physical motion on a Pro Controller, so the two are still reconciled here.
-		//
-		// Sony pad, not DualShock 4. This exception named only the pad it was measured on, and the DualSense
-		// -- whose parser branch inverts the raw Y byte identically, a dozen lines from the DualShock 4's --
-		// fell through to the other side of the test and came out inverted against every other controller.
-		// Reported from hardware, long after the convention it breaks was settled.
-		// Correct only the engine-facing presentation so Gamepad_Right2D and To World Space have one
-		// convention across devices without changing JSL getters, motion data, or either left stick.
-		//
-		// Which convention that is was, until now, whatever the Pro Controller happened to report: every
-		// other family was lined up against it. Measured against the engine instead, that was backwards.
-		// Unreal's XInput plugin publishes RightAnalogY straight from XINPUT_GAMEPAD::sThumbRY, which is
-		// positive upwards, so a standard gamepad reads +1 with the right stick pushed up -- and these
-		// controllers were reading -1 there, which is why an Xbox pad's right stick came out inverted
-		// against every controller this plugin drives. Both signs below are flipped from what they were;
-		// the relationship between the families is untouched, only the shared convention moved onto the
-		// engine's. A game that had inverted this axis to compensate should now drop that inversion, and it
-		// will hold for every pad instead of all but one.
-		OutRightY = bSonyPad ? State.stickRY : -State.stickRY;
+		JSL4UStickTable::PresentSticks(State, HardwareDeviceIdentifier, bStateHorizontal,
+			OutLeftX, OutLeftY, OutRightX, OutRightY);
 	};
 
 	float LeftX, LeftY, RightX, RightY;
@@ -893,10 +820,12 @@ void FJoyShockInterface::ProcessAnalogInputs(const FJoyShockState& SimpleState,
 	OnControllerAnalog(PlatformUser, InputDevice, FGamepadKeyNames::RightAnalogX, RightX, PreviousRightX);
 	OnControllerAnalog(PlatformUser, InputDevice, FGamepadKeyNames::RightAnalogY, RightY, PreviousRightY);
 
-	const float LeftTrigger = (bHorizontal && (bJoyConLeft || bJoyConRight)) ? 0.0f : SimpleState.lTrigger;
-	const float RightTrigger = (bHorizontal && (bJoyConLeft || bJoyConRight)) ? 0.0f : SimpleState.rTrigger;
-	const float PreviousLeftTrigger = (bWasHorizontal && (bJoyConLeft || bJoyConRight)) ? 0.0f : PreviousSimpleState.lTrigger;
-	const float PreviousRightTrigger = (bWasHorizontal && (bJoyConLeft || bJoyConRight)) ? 0.0f : PreviousSimpleState.rTrigger;
+	const bool bJoyConHalf = IsJoyConLeftIdentifier(HardwareDeviceIdentifier)
+		|| IsJoyConRightIdentifier(HardwareDeviceIdentifier);
+	const float LeftTrigger = (bHorizontal && bJoyConHalf) ? 0.0f : SimpleState.lTrigger;
+	const float RightTrigger = (bHorizontal && bJoyConHalf) ? 0.0f : SimpleState.rTrigger;
+	const float PreviousLeftTrigger = (bWasHorizontal && bJoyConHalf) ? 0.0f : PreviousSimpleState.lTrigger;
+	const float PreviousRightTrigger = (bWasHorizontal && bJoyConHalf) ? 0.0f : PreviousSimpleState.rTrigger;
 	OnControllerAnalog(PlatformUser, InputDevice, FGamepadKeyNames::LeftTriggerAnalog, LeftTrigger, PreviousLeftTrigger);
 	OnControllerAnalog(PlatformUser, InputDevice, FGamepadKeyNames::RightTriggerAnalog, RightTrigger, PreviousRightTrigger);
 }
@@ -1308,7 +1237,6 @@ void FJoyShockInterface::ReleaseAllInput(FControllerState& State)
 
 		const bool bJoyConLeft = IsJoyConLeftIdentifier(State.HardwareDeviceIdentifier);
 		const bool bJoyConRight = IsJoyConRightIdentifier(State.HardwareDeviceIdentifier);
-		const bool bSonyPad = IsSonyIdentifier(State.HardwareDeviceIdentifier);
 
 		// Released against the buttons the engine was actually last told about, which means after the same
 		// suppression and grip transform SendControllerEvents applies -- releasing a raw physical bit would
@@ -1320,7 +1248,7 @@ void FJoyShockInterface::ReleaseAllInput(FControllerState& State)
 
 		const FJoyShockState NeutralState = {};
 		ProcessAnalogInputs(NeutralState, State.SimpleState,
-			bJoyConLeft, bJoyConRight, bSonyPad,
+			State.HardwareDeviceIdentifier,
 			State.bJoyConHorizontal, State.bJoyConHorizontal,
 			PlatformUser, InputDevice);
 

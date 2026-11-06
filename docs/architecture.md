@@ -45,6 +45,7 @@ though little of it is unchanged now.
 | `JoyShockBlueprintLibrary.cpp` | The nodes, implemented — mostly locked reads of state the polling thread produced |
 | `JoyShockEnumeration.cpp` | Finding controllers and opening them, in three phases that exist to keep blocking HID I/O away from the lock the game thread takes |
 | `JoyShockInterface.cpp` | Hardware state into Unreal input events |
+| `JoyShockStickTable.cpp` | Each controller's stick signs and sideways turn, for Unreal input and the stick getters alike |
 | `JoyShockPlayerAssignment.cpp` | Which controller belongs to which player: slot allocation, joining and splitting Joy-Cons, grip transitions |
 | `JoyShockInterfaceInternal.h` | The few predicates those two files share |
 | `JoyShockSubsystem.cpp`, `JoyShockAsyncActions.cpp`, `JoyShockLibrary4Unreal.cpp` | The subsystem, the latent nodes and module startup |
@@ -55,6 +56,7 @@ though little of it is unchanged now.
 |---|---|
 | Support a new controller model | `JoyShockEnumeration.cpp` to recognise it, a `JoyShock_*.cpp` for its protocol, `InputHelpers.cpp` for its report layout |
 | Fix a misread button, stick or trigger | `InputHelpers.cpp` — the per-family parser |
+| Change a stick's sign or a Joy-Con's sideways turn | `JoyShockStickTable.cpp` — one row per controller |
 | Change what a Blueprint node does | `Public/JoyShockBlueprintLibrary.h` for the signature, `Private/JoyShockBlueprintLibrary.cpp` for the body |
 | Add a field to a controller's state | `Public/JoyShockTypes.h`, then whichever parser fills it |
 | Change rumble or light behaviour | `JoyShockPolling.cpp` — the polling thread is the only writer of output reports |
@@ -72,9 +74,10 @@ though little of it is unchanged now.
 - **A controller's identity is its MAC where one can be read, and its HID path otherwise.** That is what
   lets a controller keep its player slot across a reconnect, and what stops one controller reachable two
   ways from becoming two.
-- **A right stick's Y is normalised in exactly one place.** A whole controller (Pro Controller, Pro
-  Controller 2, DualShock 4, DualSense) is flipped in its parser, `InputHelpers.cpp`; a Joy-Con half only in
-  the interface, `ProcessAnalogInputs`, so the parser leaves a Joy-Con's `stickRY` alone. Two flips that each
-  look right cancel out, so check both places before touching either sign. The direct `JSL4U` getters keep
-  the hardware's own fields; only the keys Unreal sees are adapted.
+- **Stick signs live in one table, `JoyShockStickTable.cpp`.** The parsers leave every axis in the sign the
+  hardware sends; the table's row for each controller gives the sign of each axis and the quarter turn of a
+  Joy-Con half held sideways, and `JSL4UStickTable::PresentSticks` applies them for Unreal input and the
+  `JSL4U` stick getters alike. Do not flip a stick anywhere else: two flips that each looked right have
+  cancelled out more than once. The result is up = +1 on both sticks, XInput's convention; a game still
+  reads `Gamepad_RightY` inverted, because Unreal's game viewport negates that key for every device.
 - **`UJoyShockLibrary` and the node names cannot be renamed.** Saved Blueprint graphs refer to them.

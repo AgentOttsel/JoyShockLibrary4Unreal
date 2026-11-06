@@ -62,13 +62,21 @@ controller input only while in front.
 
 ## Sticks
 
-Every controller reports its sticks with the same convention, so one Mapping Context serves them all:
-modifiers such as **To World Space** need no per-device variant.
+Every controller reports its sticks with the same convention, XInput's: up = +1 and right = +1 on both
+sticks. One Mapping Context serves them all, and modifiers such as **To World Space** need no per-device
+variant.
+
+In a game, though, **Gamepad Right Y** reads -1 with the right stick pushed up. That is Unreal, not the
+plugin: the game viewport negates that one key for every gamepad, an Xbox pad included, before Enhanced
+Input sees it. So a camera that looks up with the left stick and the right stick alike needs a **Negate**
+on one of the two, exactly as it would with an Xbox pad.
 
 For movement, bind only **Gamepad Left 2D**. Binding **Gamepad Right 2D** to movement as well would let a
 full controller's camera stick, and its drift, move the Pawn.
 
-The direct `JSL4U` getters return the hardware's own readings; only the keys Unreal sees are adapted.
+The direct `JSL4U` stick getters return what the plugin sends Unreal, a sideways Joy-Con's stick
+included, so they read up = +1 on both sticks: they are not behind the viewport, so the right stick's
+vertical is not negated there.
 
 ## Touchpad
 

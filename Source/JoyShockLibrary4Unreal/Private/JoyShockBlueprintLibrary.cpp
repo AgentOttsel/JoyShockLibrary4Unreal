@@ -21,6 +21,7 @@
 #include "JoyShockLibrary4Unreal/JoyShockLibrary/InputHelpers.h"
 #include "JoyShockLibrary4Unreal.h"
 #include "JoyShockInterface.h"
+#include "JoyShockStickTable.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/InputDeviceSubsystem.h"
 #include "GenericPlatform/GenericPlatformInputDeviceMapper.h"
@@ -210,7 +211,10 @@ FQuat UJoyShockLibrary::GetJoyConGripUndoRotation(bool bHorizontal, bool bIsLeft
 	{
 		return FQuat::Identity;
 	}
-	return FQuat(FVector::UpVector, bIsLeft ? -HALF_PI : HALF_PI);
+	// The direction is the stick table's, so stick and motion cannot be turned opposite ways.
+	const bool bCounterClockwise =
+		JSL4UStickTable::SidewaysTurnForJoyConHalf(bIsLeft) == JSL4UStickTable::ESidewaysTurn::CounterClockwise;
+	return FQuat(FVector::UpVector, bCounterClockwise ? -HALF_PI : HALF_PI);
 }
 
 // The rotation that undoes the grip of the controller this handle names, or identity for anything that is
@@ -229,6 +233,29 @@ static FQuat GripUndoRotationForHandle(int32 Handle)
 		return FQuat::Identity;
 	}
 	return UJoyShockLibrary::GetJoyConGripUndoRotation(bHorizontal, bIsLeft);
+}
+
+// Both sticks of the controller this handle names, as Unreal input receives them: through the stick table,
+// with a sideways Joy-Con's stick turned into its grip. Reading simple_state directly skipped both, so a
+// getter disagreed with the input it is documented to match.
+//
+// The grip is asked for first, for the lock order GripUndoRotationForHandle describes.
+static void PresentedSticksForHandle(int32 Handle, FVector2D& OutLeft, FVector2D& OutRight)
+{
+	FJoyShockInterface* Interface = FJoyShockLibrary4UnrealModule::GetInstance().GetActiveInterface();
+	bool bHorizontal = false;
+	bool bIsLeft = false;
+	if (Interface != nullptr)
+	{
+		Interface->GetJoyConGrip(Handle, bHorizontal, bIsLeft);
+	}
+	const FName Identifier = FJoyShockInterface::GetHardwareDeviceIdentifier(Handle);
+	const FJoyShockState State = UJoyShockLibrary::GetSimpleStateForHandle(Handle);
+
+	float LeftX, LeftY, RightX, RightY;
+	JSL4UStickTable::PresentSticks(State, Identifier, bHorizontal, LeftX, LeftY, RightX, RightY);
+	OutLeft = FVector2D(LeftX, LeftY);
+	OutRight = FVector2D(RightX, RightY);
 }
 
 // Takes a whole motion state out of a sideways Joy-Con's frame. Identity does nothing, so callers need no
@@ -930,13 +957,15 @@ FJoyShockState UJoyShockLibrary::GetSimpleStateForHandle(int32 deviceId)
 FJSL4UJoyShockState UJoyShockLibrary::JSL4UGetControllerState(int64 ConnectionId)
 {
 	const int32 DeviceId = HandleForConnection(ConnectionId);
+	FVector2D LeftStick, RightStick;
+	PresentedSticksForHandle(DeviceId, LeftStick, RightStick);
 	const FJoyShockState& LegacySimpleState = GetSimpleStateForHandle(DeviceId);
 	return {
 		.Buttons = LegacySimpleState.buttons,
 		.LeftTrigger = LegacySimpleState.lTrigger,
 		.RightTrigger = LegacySimpleState.rTrigger,
-		.LeftStick = FVector2D(LegacySimpleState.stickLX, LegacySimpleState.stickLY),
-		.RightStick = FVector2D(LegacySimpleState.stickRX, LegacySimpleState.stickRY)
+		.LeftStick = LeftStick,
+		.RightStick = RightStick
 	};
 }
 
@@ -1135,31 +1164,16 @@ bool UJoyShockLibrary::GetTouchpadDimensionForHandle(int32 deviceId, int32 &size
 
 FVector2D UJoyShockLibrary::JSL4UGetLeftStick(int64 ConnectionId)
 {
-	const int32 DeviceId = HandleForConnection(ConnectionId);
-	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
-	
-	std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._connectedLock);
-	
-	JoyShock* jc = GetJoyShockFromHandle(DeviceId);
-	if (jc != nullptr)
-	{
-		return FVector2D(jc->simple_state.stickLX, jc->simple_state.stickLY);
-	}
-	return FVector2D::ZeroVector;
+	FVector2D Left, Right;
+	PresentedSticksForHandle(HandleForConnection(ConnectionId), Left, Right);
+	return Left;
 }
 
 FVector2D UJoyShockLibrary::JSL4UGetRightStick(int64 ConnectionId)
 {
-	const int32 DeviceId = HandleForConnection(ConnectionId);
-	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
-	
-	std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._connectedLock);
-	
-	JoyShock* jc = GetJoyShockFromHandle(DeviceId);
-	if (jc != nullptr) {
-		return FVector2D(jc->simple_state.stickRX, jc->simple_state.stickRY);
-	}
-	return FVector2D::ZeroVector;
+	FVector2D Left, Right;
+	PresentedSticksForHandle(HandleForConnection(ConnectionId), Left, Right);
+	return Right;
 }
 
 void UJoyShockLibrary::GetAndFlushAccumulatedGyroForHandle(int32 deviceId, float& gyroX, float& gyroY, float& gyroZ)
