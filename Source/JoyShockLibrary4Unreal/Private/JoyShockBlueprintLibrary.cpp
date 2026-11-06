@@ -27,6 +27,7 @@
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "UObject/Stack.h"
 #include "JoyShockLibrary4Unreal/JoyShockLibrary/JoyShockInternal.h"
 
 int32 UJoyShockLibrary::GetConnectedDeviceHandles(TArray<int32>& OutDeviceHandleArray)
@@ -295,7 +296,11 @@ static int32 HandleForConnection(int64 ConnectionId)
 	// that names no live controller of ours: an uninitialised 0, or one whose controller is gone. Said once
 	// per id, so a getter in a Tick cannot bury the log.
 	// A parked Pro Controller 2 reads zeroes for a few seconds on purpose; that is not an unservable id.
-	if (Handle == INDEX_NONE && ConnectionId >= 0 && !(Interface != nullptr && Interface->IsParkedConnection(ConnectionId)))
+	// Nor is one that has only just left: the game is told a frame or more after it goes, and every Tick
+	// reader of it lands in that gap once. Skipped without being remembered, so a read still arriving after
+	// the grace is warned about as usual.
+	if (Handle == INDEX_NONE && ConnectionId >= 0
+		&& !(Interface != nullptr && (Interface->IsParkedConnection(ConnectionId) || Interface->HasConnectionJustEnded(ConnectionId))))
 	{
 		static const TCHAR* ReadingSite = TEXT("JSL4U reading");
 		bool bAlreadyWarned = false;
@@ -325,12 +330,16 @@ static int32 HandleForConnection(int64 ConnectionId)
 					Live = FString::JoinBy(LiveIds, TEXT(", "), [](int64 Id) { return LexToString(Id); });
 				}
 			}
+			// Said once per id, so this line is the only clue there will be: it has to name the Blueprint
+			// that asked, or the reader cannot be found from the log. Empty in a build without Blueprint
+			// guards (Shipping), where the rest of the line still stands.
+			const FString AskedFrom = FFrame::GetScriptCallstack(/*bReturnEmpty*/ true);
 			UE_LOG(LogJoyShockLibrary, Warning,
 				TEXT("JSL4U: asked to read connection %lld, which is not a connected controller, so every ")
 				TEXT("reading for it is zero. Connected right now: %s. A 0 here means the Blueprint passed an ")
 				TEXT("unset variable -- Connection Id comes from the controller info a Wait For ... Changes ")
-				TEXT("pin or Get All Connected Controllers handed you."),
-				ConnectionId, *Live);
+				TEXT("pin or Get All Connected Controllers handed you.%s%s"),
+				ConnectionId, *Live, AskedFrom.IsEmpty() ? TEXT("") : TEXT(" Asked from:\n"), *AskedFrom);
 		}
 	}
 	return Handle;
@@ -867,7 +876,10 @@ bool UJoyShockLibrary::JSL4UIsControllerConnected(int64 ConnectionId)
 
 	// For ours, the id resolving at all already means a live connection -- the interface only answers for
 	// handles it has connected -- and the library-side test below then agrees with what the listings show.
-	const int32 DeviceId = HandleForConnection(ConnectionId);
+	// Asked of the interface directly, not through HandleForConnection: checking whether a stored id is still
+	// live is exactly what a game should do with it, so "no" is the answer here, not a mistake to warn about.
+	FJoyShockInterface* Interface = FJoyShockLibrary4UnrealModule::GetInstance().GetActiveInterface();
+	const int32 DeviceId = Interface != nullptr ? Interface->GetHandleForConnection(ConnectionId) : INDEX_NONE;
 
 	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
 

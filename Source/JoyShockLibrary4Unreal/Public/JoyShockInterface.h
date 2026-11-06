@@ -106,6 +106,12 @@ public:
 	TArray<FJSL4UControllerInfo> GetParkedControllerInfos() const;
 	bool IsParkedConnection(int64 ConnectionId) const;
 
+	// True for a connection that ended a moment ago. A controller leaves this interface a frame or more
+	// before any game hears about it -- Wait For Any Controller Changes deliberately reports on a later tick
+	// -- so a game reading it every frame is bound to ask for it once it is already gone. That read is not a
+	// mistake worth a warning; one still arriving after the grace is.
+	bool HasConnectionJustEnded(int64 ConnectionId) const;
+
 private:
 	FJoyShockInterface(const TSharedRef<FGenericApplicationMessageHandler>& MessageHandler);
 
@@ -240,6 +246,12 @@ private:
 	// Parked controllers whose disconnect is finally due (handle, timed out), announced with this tick's
 	// other disconnects.
 	TArray<TPair<int32, bool>> RetiredThisTick;
+	// Connections that ended, with when, for HasConnectionJustEnded. Under ControllerContainerLock; pruned
+	// whenever one is added, so it holds only the last few seconds' departures.
+	TMap<int64, double> EndedConnections;
+	// Covers the frames between a controller leaving and the game being told, with room for a hitch.
+	static constexpr double EndedConnectionGraceSeconds = 2.0;
+	void RecordEndedConnection(int64 ConnectionId);
 	// Pro Controllers 2 whose connect is waiting for their identity, by handle, with when they first arrived.
 	// Game thread only.
 	TMap<int32, double> DeferredSwitch2Connects;

@@ -1389,6 +1389,7 @@ bool FJoyShockInterface::OnDisconnectCallback(int32 InDeviceHandle, bool bInHasT
 	}
 
 	ControllerState.bIsConnected = false;
+	RecordEndedConnection(ControllerState.ConnectionId);
 
 	// Tell the mapper this physical device is gone.
 	IPlatformInputDeviceMapper& DeviceMapper = IPlatformInputDeviceMapper::Get();
@@ -1449,6 +1450,31 @@ bool FJoyShockInterface::IsParkedConnection(int64 ConnectionId) const
 		});
 }
 
+bool FJoyShockInterface::HasConnectionJustEnded(int64 ConnectionId) const
+{
+	FScopeLock ContainerLock(&ControllerContainerLock);
+	const double* EndedAt = EndedConnections.Find(ConnectionId);
+	return EndedAt != nullptr && FPlatformTime::Seconds() - *EndedAt < EndedConnectionGraceSeconds;
+}
+
+void FJoyShockInterface::RecordEndedConnection(int64 ConnectionId)
+{
+	if (ConnectionId <= 0)
+	{
+		return;
+	}
+	FScopeLock ContainerLock(&ControllerContainerLock);
+	const double Now = FPlatformTime::Seconds();
+	for (auto It = EndedConnections.CreateIterator(); It; ++It)
+	{
+		if (Now - It.Value() >= EndedConnectionGraceSeconds)
+		{
+			It.RemoveCurrent();
+		}
+	}
+	EndedConnections.Add(ConnectionId, Now);
+}
+
 bool FJoyShockInterface::TryParkSwitch2(int32 DeviceHandle, FControllerState& State, bool bTimedOut)
 {
 	// Only the Pro Controller 2 has two transports to move between -- a Joy-Con 2 never appears on a cable --
@@ -1491,6 +1517,7 @@ void FJoyShockInterface::RetireParkedSwitch2(const FParkedSwitch2& Parked)
 	FInputDeviceRegistry::RemoveDevice(Parked.InputDevice);
 	ReleaseUniqueHandle(ParkedSwitch2HandleKey(Parked.DeviceHandle));
 	RetiredThisTick.Add(TPair<int32, bool>(Parked.DeviceHandle, Parked.bTimedOut));
+	RecordEndedConnection(Parked.ConnectionId);
 
 	UE_LOG(LogJoyShockLibrary, Log,
 		TEXT("Controller %d did not come back on its other connection; it is disconnected."), Parked.DeviceHandle);
