@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <atomic>
 #include "tools.h"
+#include "GyroTimeSlicer.h"
 #include <cstring>
 
 #ifdef __GNUC__
@@ -130,10 +131,14 @@ public:
 
 	GamepadMotion motion;
 
-	float cumulative_gyro_x = 0.f;
-	float cumulative_gyro_y = 0.f;
-	float cumulative_gyro_z = 0.f;
-	int32 num_cumulative_gyro_samples = 0;
+	// The calibrated, local-frame gyro, as one velocity per game frame. Guarded by modifying_lock. Sliced at
+	// most once per engine frame, so Unreal's motion input and the Blueprint getter read the same value
+	// rather than each taking a share of the samples.
+	FGyroTimeSlicer gyro_slicer;
+	uint64 gyro_slice_frame = MAX_uint64;
+	float frame_gyro_x = 0.f;
+	float frame_gyro_y = 0.f;
+	float frame_gyro_z = 0.f;
 
 	int32 gyroSpace = 0;
 
@@ -505,9 +510,14 @@ public:
 
 	~JoyShock();
 
-	void push_cumulative_gyro(float gyroX, float gyroY, float gyroZ);
-	
-	void get_and_flush_cumulative_gyro(float& gyroX, float& gyroY, float& gyroZ);
+	// Polling thread: one calibrated, local-frame gyro sample, covering sampleSeconds since the one before it.
+	void push_gyro_sample(float sampleSeconds, float gyroX, float gyroY, float gyroZ);
+
+	// Game thread: this engine frame's gyro in the controller's own frame, the same for every caller in it.
+	void get_frame_gyro(uint64 engineFrame, float& gyroX, float& gyroY, float& gyroZ);
+
+	// The same, converted to this controller's gyro space.
+	void get_frame_gyro_in_gyro_space(uint64 engineFrame, float& gyroX, float& gyroY, float& gyroZ);
 
 	void reset_continuous_calibration();
 

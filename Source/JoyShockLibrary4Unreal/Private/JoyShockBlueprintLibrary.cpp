@@ -1170,7 +1170,21 @@ void UJoyShockLibrary::GetAndFlushAccumulatedGyroForHandle(int32 deviceId, float
 	
 	JoyShock* jc = GetJoyShockFromHandle(deviceId);
 	if (jc != nullptr) {
-		jc->get_and_flush_cumulative_gyro(gyroX, gyroY, gyroZ);
+		jc->get_frame_gyro_in_gyro_space(GFrameCounter, gyroX, gyroY, gyroZ);
+		return;
+	}
+	gyroX = gyroY = gyroZ = 0.f;
+}
+
+void UJoyShockLibrary::GetFrameGyroForHandle(int32 deviceId, float& gyroX, float& gyroY, float& gyroZ)
+{
+	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
+
+	std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._connectedLock);
+
+	JoyShock* jc = GetJoyShockFromHandle(deviceId);
+	if (jc != nullptr) {
+		jc->get_frame_gyro(GFrameCounter, gyroX, gyroY, gyroZ);
 		return;
 	}
 	gyroX = gyroY = gyroZ = 0.f;

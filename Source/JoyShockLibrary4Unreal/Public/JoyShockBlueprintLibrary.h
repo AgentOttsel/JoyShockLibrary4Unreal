@@ -364,11 +364,16 @@ public:
 		meta = (DisplayName = "JSL4U Get Right Stick", ToolTip = "Returns one controller's current right-stick position, from -1 to 1. Reads that device directly, so it answers before the controller belongs to any player -- for assignment screens and diagnostics. For gameplay, bind Enhanced Input instead."))
 	static FVector2D JSL4UGetRightStick(int64 ConnectionId);
 
-	// get accumulated average gyro since this function was last called or last flushed values
+	// This engine frame's gyro, in degrees per second, converted to the controller's gyro space: every sample
+	// that arrived, played back over the time this frame covers (FGyroTimeSlicer). The same value for every
+	// call within a frame; the name predates that and is kept for existing callers.
 	static void GetAndFlushAccumulatedGyroForHandle(int32 deviceId, float& gyroX, float& gyroY, float& gyroZ);
 
+	// The same per-frame gyro in the controller's own frame, for Unreal's motion input.
+	static void GetFrameGyroForHandle(int32 deviceId, float& gyroX, float& gyroY, float& gyroZ);
+
 	UFUNCTION(BlueprintCallable, Category = "JoyShock Library|Motion",
-		meta = (DisplayName = "JSL4U Get And Clear Accumulated Gyro", ToolTip = "Returns the accumulated gyro rotation since the previous call, then clears the accumulator. Values use Unreal axes."))
+		meta = (DisplayName = "JSL4U Get And Clear Accumulated Gyro", ToolTip = "Returns this frame's gyro angular velocity in degrees per second, built from every report received and the time each one covers, so it turns smoothly whether the controller reports faster or slower than the frame rate. Values use Unreal axes."))
 	static FVector JSL4UGetAndClearAccumulatedGyro(int64 ConnectionId);
 
 	// Sets how gyro input is transformed. GetAndFlushAccumulatedGyroForHandle, GetRawIMUStateForHandle and the

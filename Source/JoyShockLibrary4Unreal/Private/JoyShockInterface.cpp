@@ -542,6 +542,12 @@ void FJoyShockInterface::SendControllerEvents()
 					CurrentIMUState = ControllerState.IMUState;
 				}
 
+				// The latest report's gyro is one sample, not this frame's turn: below the frame rate it would
+				// repeat for as long as the controller stays quiet, above it every other sample would be lost.
+				// The frame's own slice of the samples replaces it (FGyroTimeSlicer).
+				UJoyShockLibrary::GetFrameGyroForHandle(DeviceHandle,
+					CurrentIMUState.gyroX, CurrentIMUState.gyroY, CurrentIMUState.gyroZ);
+
 				ProcessIMUState(DeviceHandle, CurrentIMUState, PlatformUser, InputDevice);
 
 				// The mouse sensor, into this half's own pair of axes. Sent from here, per device handle,

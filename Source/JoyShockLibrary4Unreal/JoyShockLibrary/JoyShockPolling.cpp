@@ -949,9 +949,10 @@ void pollIndividualLoop(JoyShock *jc) {
 					std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._callbackLock);
 					JSL4UModule.GetOnConnected().ExecuteIfBound(jc->intHandle);
 				}
-				// accumulate gyro
+				// Each sample covers the time since the previous report, the interval it was measured over;
+				// the game thread plays those stretches back frame by frame (FGyroTimeSlicer).
 				FIMUState imuState = jc->get_transformed_imu_state(jc->imu_state);
-				jc->push_cumulative_gyro(imuState.gyroX, imuState.gyroY, imuState.gyroZ);
+				jc->push_gyro_sample(jc->delta_time, imuState.gyroX, imuState.gyroY, imuState.gyroZ);
 				if (JSL4UModule.GetOnPoll().IsBound() || JSL4UModule.GetOnPollTouch().IsBound())
 				{
 					std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._callbackLock);

@@ -66,7 +66,7 @@ Há três níveis, e a maioria dos projetos só precisa do primeiro:
 
 O passo a passo de cada nível está em [docs/getting-started.pt-BR.md](docs/getting-started.pt-BR.md).
 
-O plugin traz uma fase de demonstração, `LV_JoyShockDemo`, com multiplayer local e um espelho 3D de cada
+O plugin traz uma fase de demonstração, `LV_JoyShockLocalMultiplayer`, com multiplayer local e um espelho 3D de cada
 controle conectado. Veja [docs/demo.md](docs/demo.md).
 
 ## Documentação

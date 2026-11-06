@@ -19,6 +19,14 @@ The direct nodes — **JSL4U Get IMU State**, **JSL4U Get Motion State** — use
 can be mixed freely. They also read a controller before it belongs to any player, which suits a
 calibration screen.
 
+**Rotation Rate is this frame's turn, not the latest report.** Controllers report on their own schedule:
+a Pro Controller 2 over Bluetooth sends fewer reports than most games draw frames, a DualShock 4 on the
+cable sends several per frame. Each report covers the time since the one before it, and every frame gets
+exactly the stretch of time it spans, so the camera turns smoothly either way and no report is lost. When
+reports stop, the last turn is held for at most 50 ms and then drops to zero, so a controller going quiet
+mid-turn does not keep turning the camera. **JSL4U Get And Clear Accumulated Gyro** returns the same value
+in the controller's gyro space. **JSL4U Get IMU State** is still the latest report as it arrived.
+
 Pitch and roll from **Get Motion State** are absolute: they stay anchored to real-world down. Yaw drifts
 slowly, as it must without a magnetic or visual reference, which is why a game that maps absolute
 orientation to anything should offer a "recentre" action.

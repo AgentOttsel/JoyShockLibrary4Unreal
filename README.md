@@ -65,7 +65,7 @@ There are three levels, and most projects only ever need the first:
 
 Each level is walked through in [docs/getting-started.md](docs/getting-started.md).
 
-The plugin ships a demo level, `LV_JoyShockDemo`, with local multiplayer and a 3D mirror of each connected
+The plugin ships a demo level, `LV_JoyShockLocalMultiplayer`, with local multiplayer and a 3D mirror of each connected
 controller. See [docs/demo.md](docs/demo.md).
 
 ## Documentation

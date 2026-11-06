@@ -249,37 +249,28 @@ JoyShock::~JoyShock() {
 	release_sw2_command_interface_if_idle();
 #endif
 }
-void JoyShock::push_cumulative_gyro(float gyroX, float gyroY, float gyroZ) {
+void JoyShock::push_gyro_sample(float sampleSeconds, float gyroX, float gyroY, float gyroZ) {
 	modifying_lock.Lock();
-	if (num_cumulative_gyro_samples == 0) {
-		cumulative_gyro_x = 0.f;
-		cumulative_gyro_y = 0.f;
-		cumulative_gyro_z = 0.f;
-	}
-	cumulative_gyro_x += gyroX;
-	cumulative_gyro_y += gyroY;
-	cumulative_gyro_z += gyroZ;
-	num_cumulative_gyro_samples++;
+	gyro_slicer.Push(sampleSeconds, gyroX, gyroY, gyroZ);
 	modifying_lock.Unlock();
 }
-void JoyShock::get_and_flush_cumulative_gyro(float& gyroX, float& gyroY, float& gyroZ) {
+void JoyShock::get_frame_gyro(uint64 engineFrame, float& gyroX, float& gyroY, float& gyroZ) {
 	modifying_lock.Lock();
-	if (num_cumulative_gyro_samples == 0) {
-		gyroX = cumulative_gyro_x;
-		gyroY = cumulative_gyro_y;
-		gyroZ = cumulative_gyro_z;
+	if (engineFrame != gyro_slice_frame) {
+		gyro_slice_frame = engineFrame;
+		const double nowSeconds = std::chrono::duration<double>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
+		gyro_slicer.Slice(nowSeconds, frame_gyro_x, frame_gyro_y, frame_gyro_z);
 	}
-	else {
-		gyroX = cumulative_gyro_x / num_cumulative_gyro_samples;
-		gyroY = cumulative_gyro_y / num_cumulative_gyro_samples;
-		gyroZ = cumulative_gyro_z / num_cumulative_gyro_samples;
-		num_cumulative_gyro_samples = 0;
-		// so that we don't return zeroes before we receive a new sample, store this for next time:
-		cumulative_gyro_x = gyroX;
-		cumulative_gyro_y = gyroY;
-		cumulative_gyro_z = gyroZ;
-	}
+	gyroX = frame_gyro_x;
+	gyroY = frame_gyro_y;
+	gyroZ = frame_gyro_z;
+	modifying_lock.Unlock();
+}
+void JoyShock::get_frame_gyro_in_gyro_space(uint64 engineFrame, float& gyroX, float& gyroY, float& gyroZ) {
+	get_frame_gyro(engineFrame, gyroX, gyroY, gyroZ);
 	float gravX, gravY, gravZ;
+	modifying_lock.Lock();
 	motion.GetGravity(gravX, gravY, gravZ);
 	modifying_lock.Unlock();
 	switch (gyroSpace)
