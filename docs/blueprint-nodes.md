@@ -41,7 +41,7 @@ Separated** and **On Controller Function Blocked**.
 | **JSL4U Get Connected Controllers** | Every connected controller this plugin drives, with its identities, model, assignment and settings |
 | **JSL4U Get All Connected Controllers** | Every controller Unreal accepts, this plugin's and XInput pads alike, in one list |
 | **JSL4U Get Controller Info** | One controller's identities, model, assignment and settings. *Is Connected* is false for an id that names no live controller |
-| **JSL4U Is Controller Connected** | Whether this `ConnectionId` names a connected controller right now |
+| **JSL4U Is Controller Connected** | Whether this `ConnectionId` names a connected controller right now. The way to check a stored id before reading it: unlike the reading nodes, it never logs the "not a connected controller" warning |
 | **JSL4U Refresh Controllers** | Asks for a rescan. Rarely needed: device changes are detected on their own |
 | **JSL4U Get Switch 2 Sensors** | Battery voltage, temperature, magnetometer and mouse sensor of a Switch 2 controller. *Is Supported* is false on any other |
 | **JSL4U Consume Switch 2 Mouse Delta** | The Switch 2 mouse sensor's movement since the last call, wrap already resolved. Consumes what it reports: call it from one place |
