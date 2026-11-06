@@ -930,6 +930,18 @@ bool handle_input(JoyShock* jc, uint8_t* packet, int32 len, bool &hasIMU) {
 	jc->delta_time = (float)(std::chrono::duration_cast<std::chrono::microseconds>(time_now - jc->last_polled).count() / 1000000.0);
 	jc->last_polled = time_now;
 
+	// A window closes only when a report arrives, so a controller that stops reporting keeps its last rate
+	// here; the getter answers zero for it instead.
+	jc->reports_in_rate_window++;
+	const auto rateWindow = time_now - jc->report_rate_window_start;
+	if (rateWindow >= std::chrono::seconds(1))
+	{
+		const double windowSeconds = std::chrono::duration<double>(rateWindow).count();
+		jc->reports_per_second.store(static_cast<float>(jc->reports_in_rate_window / windowSeconds));
+		jc->reports_in_rate_window = 0;
+		jc->report_rate_window_start = time_now;
+	}
+
 	if (jc->cue_motion_reset)
 	{
 		//printf("RESET motion\n");

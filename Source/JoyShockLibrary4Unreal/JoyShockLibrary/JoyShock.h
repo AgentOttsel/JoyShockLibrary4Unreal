@@ -112,6 +112,13 @@ public:
 	std::chrono::steady_clock::time_point last_polled;
 	float delta_time = 1.0;
 
+	// Input reports per second, counted where each report is handled rather than once per game frame, so
+	// the figure is the controller's and not the frame rate's. The window is the polling thread's alone;
+	// only the published rate crosses to the game thread.
+	int32 reports_in_rate_window = 0;
+	std::chrono::steady_clock::time_point report_rate_window_start = std::chrono::steady_clock::now();
+	std::atomic<float> reports_per_second{ 0.f };
+
 	FJoyShockState simple_state = {};
 	FJoyShockState last_simple_state = {};
 

@@ -1262,6 +1262,26 @@ float UJoyShockLibrary::JSL4UGetSecondsSinceLastReport(int64 ConnectionId)
 	return GetTimeSinceLastUpdateForHandle(DeviceId);
 }
 
+float UJoyShockLibrary::JSL4UGetReportsPerSecond(int64 ConnectionId)
+{
+	const int32 DeviceId = HandleForConnection(ConnectionId);
+	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
+	std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._connectedLock);
+
+	JoyShock* jc = GetJoyShockFromHandle(DeviceId);
+	if (jc == nullptr)
+	{
+		return 0.0f;
+	}
+	// The rate is only republished when a report closes its window, so a controller gone quiet would go on
+	// showing the rate it had. A second with nothing at all is a rate of zero.
+	if (std::chrono::steady_clock::now() - jc->last_polled > std::chrono::seconds(1))
+	{
+		return 0.0f;
+	}
+	return jc->reports_per_second.load();
+}
+
 float UJoyShockLibrary::GetStickStepForHandle(int32 deviceId)
 {
 	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();

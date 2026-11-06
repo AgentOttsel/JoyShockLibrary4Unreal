@@ -412,6 +412,13 @@ public:
 		meta = (DisplayName = "JSL4U Get Seconds Since Last Report", ToolTip = "Returns seconds since the controller last delivered an input report. A steadily increasing value indicates the device has stopped reporting."))
 	static float JSL4UGetSecondsSinceLastReport(int64 ConnectionId);
 
+	// Input reports the controller actually delivered over the last second, counted as they arrive, so it
+	// compares a cable with Bluetooth, or a good Bluetooth link with a crowded one. Get Poll Interval is what
+	// the controller is supposed to do; this is what it does.
+	UFUNCTION(BlueprintPure, Category = "JoyShock Library|Diagnostics",
+		meta = (DisplayName = "JSL4U Get Reports Per Second", ToolTip = "Returns how many input reports this controller delivered per second, measured over the last second as they arrive, independent of frame rate. Zero for a controller that has stopped reporting."))
+	static float JSL4UGetReportsPerSecond(int64 ConnectionId);
+
 	static float GetStickStepForHandle(int32 deviceId);
 
 	static float GetTriggerStepForHandle(int32 deviceId);

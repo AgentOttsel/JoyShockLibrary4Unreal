@@ -140,3 +140,4 @@ The touchpad is bindable in Enhanced Input too — see [Touchpad](input.md#touch
 | **JSL4U Get Trigger Resolution Step** | The smallest trigger change; 1 for the Switch's digital triggers |
 | **JSL4U Get Poll Interval** | Expected milliseconds between input reports |
 | **JSL4U Get Seconds Since Last Report** | Seconds since the last input report; a value that keeps growing means the controller stopped reporting |
+| **JSL4U Get Reports Per Second** | Input reports actually delivered over the last second, counted as they arrive, independent of frame rate; zero once the controller stops reporting. Compares a cable with Bluetooth |
