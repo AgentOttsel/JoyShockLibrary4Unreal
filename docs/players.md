@@ -19,6 +19,10 @@ This page is about which controller ends up on which player.
 - **A slot can be shared.** Assign two, three or four controllers to the same slot and they all drive that
   player — a DualSense and a Pro Controller on one slot both move the same Pawn. A joined Joy-Con pair is
   the case the plugin performs for you.
+- **Every game starts from automatic slots, in the editor too.** Controllers stay connected from one Play
+  In Editor session to the next, because reconnecting them would disturb their Bluetooth links, but the
+  slots a game assigned are dropped when it ends: the next Play, in any level, starts as a packaged game
+  would. Joined Joy-Con pairs stay joined, since joining is the player's choice.
 
 Four solo Joy-Cons make four players; two joined pairs make two. A join dissolves by itself if either half
 disconnects.

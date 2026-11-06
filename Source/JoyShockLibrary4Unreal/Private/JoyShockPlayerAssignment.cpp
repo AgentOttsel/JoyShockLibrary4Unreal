@@ -503,6 +503,21 @@ bool FJoyShockInterface::IsJoinPrimary(int32 Handle) const
 	FScopeLock ContainerLock(&ControllerContainerLock);
 	return GetGroupPrimary(Handle) == Handle;
 }
+void FJoyShockInterface::ResetPlayerAssignmentsToAutomatic()
+{
+	FScopeLock ContainerLock(&ControllerContainerLock);
+
+	// Only the slots. The controllers stay connected on purpose: tearing them down to start clean would rerun
+	// their init on live Bluetooth links, which is what retires working controllers. And a joined pair stays
+	// joined, because joining is something the player did, not something a game chose.
+	//
+	// Emptying the map makes RefreshPlayerAssignments treat every controller as newly connected, which hands
+	// out the lowest free slots in handle order -- the order a fresh launch connects them in -- and moves the
+	// player lights with them.
+	PlayerSlotByPrimary.Reset();
+	RefreshPlayerAssignments();
+}
+
 bool FJoyShockInterface::SetPlayerIndexForDevice(int32 Handle, int32 PlayerIndex)
 {
 	FScopeLock ContainerLock(&ControllerContainerLock);

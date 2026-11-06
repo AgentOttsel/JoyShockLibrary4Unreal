@@ -79,6 +79,10 @@ public:
 	// The name the stick table and the pairing tests know this controller by. Public so the JSL4U stick
 	// getters present the sticks from the same row as Unreal input does.
 	static FName GetHardwareDeviceIdentifier(int32 InControllerId);
+	// Drops every slot a game assigned and hands each controller the slot it would get connecting now, in
+	// handle order. Connections, Joy-Con pairings and a parked Pro Controller 2's slot are untouched. Called
+	// when a game instance ends, so an editor's next Play starts where a packaged game would (R-020).
+	void ResetPlayerAssignmentsToAutomatic();
 	// Assigns this device's logical controller to a player slot, overriding the slot it was given on
 	// connection. Pass INDEX_NONE to hand it back to automatic assignment. Returns false if the handle is
 	// not a connected controller. Slots may be shared: assigning two controllers to one slot makes both
