@@ -208,13 +208,21 @@ static bool parse_switch2_report(JoyShock* jc, uint8_t* packet, int32 len, FIMUS
 			jc->battery_percent.store(percent);
 			jc->battery_level.store(BatteryLevelFromPercent(percent));
 		}
-		// The two bytes after the voltage, which Switch2Connect reads as the battery current in hundredths
-		// of an amp. There is no charging flag in the report, so this is the only sign of one: measured on a
-		// Pro Controller 2 at +0.52 A on the cable and exactly 0 on Bluetooth, so discharge does not read
-		// negative and anything above zero means current going in.
-		const float batteryCurrent = uint16_to_int16(packet[34] | (packet[35] << 8)) / 100.0f;
-		jc->sw2_battery_current.store(batteryCurrent);
-		jc->battery_charging.store(batteryCurrent > 0.f);
+		// The byte after the voltage is a charge state, not half of a current, though Switch2Connect -- and
+		// this parser after it -- read it as one (ndeadly's switch2_controller_research, F-009). Measured on a
+		// Pro Controller 2: 0 on battery, 0x24 to 0x3C while charging on the cable, and 0x20 once the charge
+		// light goes out with the cable still in. So 0x20 alone is external power with nothing going in, and
+		// only a value above it is charging.
+		const uint8_t chargeState = packet[34];
+		jc->battery_charging.store(chargeState > 0x20);
+	}
+	// The battery current follows the charge state. Per ndeadly only a Joy-Con 2 reports it, and only with
+	// feature bit 0x20, which neither init here asks for over Bluetooth, so it reads zero on every controller
+	// today; asking for it on a Pro Controller 2 over Bluetooth still gave zero. The scale is Switch2Connect's
+	// and unconfirmed.
+	if (len >= 37)
+	{
+		jc->sw2_battery_current.store(uint16_to_int16(packet[35] | (packet[36] << 8)) / 100.0f);
 	}
 
 	// The remaining sensors. None of these is motion, and nothing outside this family reports them, so

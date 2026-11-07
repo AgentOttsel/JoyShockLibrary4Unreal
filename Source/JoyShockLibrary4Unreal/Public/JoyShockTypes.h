@@ -647,8 +647,9 @@ struct JOYSHOCKLIBRARY4UNREAL_API FJSL4USwitch2Sensors
 	UPROPERTY(BlueprintReadOnly)
 	float BatteryVolts = 0.f;
 
-	// The battery current, in amps, as the two bytes after the voltage read signed and divided by 100 --
-	// the scale Switch2Connect uses. Above zero while charging, and zero on battery: Is Charging comes from it.
+	// The battery current, in amps, as the two bytes after the charge state read signed and divided by 100 --
+	// Switch2Connect's scale, unconfirmed. Zero on every controller today: only a Joy-Con 2 reports it, and
+	// only with a feature the plugin does not ask for. Is Charging does not come from it.
 	UPROPERTY(BlueprintReadOnly)
 	float BatteryCurrent = 0.f;
 
