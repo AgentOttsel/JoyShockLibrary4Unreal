@@ -66,8 +66,9 @@ Há três níveis, e a maioria dos projetos só precisa do primeiro:
 
 O passo a passo de cada nível está em [docs/getting-started.pt-BR.md](docs/getting-started.pt-BR.md).
 
-O plugin traz uma fase de demonstração, `LV_JoyShockLocalMultiplayer`, com multiplayer local e um espelho 3D de cada
-controle conectado. Veja [docs/demo.md](docs/demo.md).
+O plugin traz duas fases de demonstração: `LV_JoyShockLocalMultiplayer`, com multiplayer local e um espelho
+3D de cada controle conectado, e `LV_JoyShockGyroAim`, para avaliar a mira por giroscópio. Veja
+[docs/demo.md](docs/demo.md).
 
 ## Documentação
 
@@ -77,7 +78,7 @@ As páginas detalhadas estão em inglês, menos a de primeiros passos.
 |---|---|
 | [Hardware support](docs/hardware.md) | O que foi testado em cada controle, e quem pode testar o quê |
 | [Primeiros passos](docs/getting-started.pt-BR.md) | Os três níveis de configuração, passo a passo |
-| [Demo level](docs/demo.md) | Como a fase de demonstração é montada |
+| [Demo levels](docs/demo.md) | Como as fases de demonstração são montadas |
 | [Input](docs/input.md) | Todas as teclas que o plugin adiciona, Joy-Con na horizontal, sticks, touchpad |
 | [Motion and gyro](docs/motion.md) | Movimento pelo Enhanced Input, espaço do giroscópio, calibração |
 | [Reacting to controllers](docs/controllers.md) | Os nodes **Wait For…**, o `ConnectionId`, a bateria e os identificadores de modelo |
@@ -85,7 +86,7 @@ As páginas detalhadas estão em inglês, menos a de primeiros passos.
 | [Rumble, lights and output](docs/output.md) | Vibração, luzes, indicador de jogador, conflito com outros programas |
 | [Nintendo Switch 2 controllers](docs/switch2.md) | Pro Controller 2 e Joy-Con 2, USB e Bluetooth, sensores extras |
 | [Blueprint nodes](docs/blueprint-nodes.md) | Como a API `JSL4U*` está organizada |
-| [Diagnostics and troubleshooting](docs/troubleshooting.md) | Comandos de diagnóstico, problemas de Bluetooth e testes no editor |
+| [Diagnostics and troubleshooting](docs/troubleshooting.md) | Comandos de diagnóstico, problemas de Bluetooth, testes no editor e como liberar os controles para outro programa |
 | [Source layout](docs/architecture.md) | Para quem vai mexer no código: as camadas, onde mudar o quê |
 
 ## Perguntas
@@ -110,8 +111,7 @@ processam dados de movimento venham de onde vierem.
 - O modelo 3D do DualSense é de [Saleem Akhtar](https://www.artstation.com/marketplace/p/zBM9R/ps5-duelsense-controller-3d-model-fbx).
 - Os modelos do Joy-Con, do grip do Joy-Con e do DualShock 4 usados no espelho da demo foram modelados por
   [uayten](https://github.com/uayten) para este plugin.
-- [uayten](https://github.com/uayten), pela reforma de 07/2026: input nativo e multiplayer local na Unreal
+- [uayten](https://github.com/uayten), pela reforma do plugin: input nativo e multiplayer local na Unreal
   Engine 5.8; descoberta, identidade e roteamento estáveis de controles e jogadores; Joy-Con na horizontal,
-  junção, separação e LEDs de jogador; a implementação completa do Pro Controller 2; bateria;
-  troca entre cabo e Bluetooth; o espelho por controle, o HUD de sensores e o fluxo da demo; eixos de stick
-  consistentes para a engine; e as correções de conexão, travamento e crash ao fechar.
+  junção, separação e LEDs de jogador; o Pro Controller 2; bateria; troca entre cabo e Bluetooth; as fases
+  de demonstração; e as correções de conexão e estabilidade.

@@ -65,8 +65,8 @@ There are three levels, and most projects only ever need the first:
 
 Each level is walked through in [docs/getting-started.md](docs/getting-started.md).
 
-The plugin ships a demo level, `LV_JoyShockLocalMultiplayer`, with local multiplayer and a 3D mirror of each connected
-controller. See [docs/demo.md](docs/demo.md).
+The plugin ships two demo levels: `LV_JoyShockLocalMultiplayer`, with local multiplayer and a 3D mirror of
+each connected controller, and `LV_JoyShockGyroAim`, for judging gyro aiming. See [docs/demo.md](docs/demo.md).
 
 ## Documentation
 
@@ -74,7 +74,7 @@ controller. See [docs/demo.md](docs/demo.md).
 |---|---|
 | [Hardware support](docs/hardware.md) | What has been tested on each controller, and who can test what |
 | [Getting started](docs/getting-started.md) | The three setup levels, step by step |
-| [Demo level](docs/demo.md) | How the demo level is put together |
+| [Demo levels](docs/demo.md) | How the demo levels are put together |
 | [Input](docs/input.md) | Every key the plugin adds, sideways Joy-Cons, sticks, touchpad |
 | [Motion and gyro](docs/motion.md) | Motion through Enhanced Input, gyro space, calibration |
 | [Reacting to controllers](docs/controllers.md) | The **Wait For…** nodes, `ConnectionId`, battery and model identifiers |
@@ -82,7 +82,7 @@ controller. See [docs/demo.md](docs/demo.md).
 | [Rumble, lights and output](docs/output.md) | Rumble, lights, player indicator, conflicts with other applications |
 | [Nintendo Switch 2 controllers](docs/switch2.md) | Pro Controller 2 and Joy-Con 2, USB and Bluetooth, extra sensors |
 | [Blueprint nodes](docs/blueprint-nodes.md) | How the `JSL4U*` API is organised |
-| [Diagnostics and troubleshooting](docs/troubleshooting.md) | Diagnostic commands, Bluetooth issues and testing in the editor |
+| [Diagnostics and troubleshooting](docs/troubleshooting.md) | Diagnostic commands, Bluetooth issues, testing in the editor and handing the controllers to another program |
 | [Source layout](docs/architecture.md) | For changing the code: the layers, and where to change what |
 
 ## Questions
@@ -109,8 +109,7 @@ wherever it comes from.
 - The DualSense 3D model is by [Saleem Akhtar](https://www.artstation.com/marketplace/p/zBM9R/ps5-duelsense-controller-3d-model-fbx).
 - The Joy-Con, Joy-Con grip and DualShock 4 models used by the demo's controller mirror were modelled by
   [uayten](https://github.com/uayten) for this plugin.
-- [uayten](https://github.com/uayten), for the 07/2026 overhaul: Unreal Engine 5.8 native input and local
-  multiplayer; stable controller discovery, identity and player routing; Joy-Con horizontal play,
-  joining, separation and player LEDs; the complete implementation of the Pro Controller 2; battery
-  reporting; cable/Bluetooth transport switching; the per-controller mirror, sensor HUD and demo workflow;
-  consistent engine-facing stick axes; and the controller connection, freeze and shutdown-crash fixes.
+- [uayten](https://github.com/uayten), for the plugin's overhaul: native input and local multiplayer on
+  Unreal Engine 5.8; stable controller discovery, identity and player routing; sideways Joy-Cons, joining,
+  separation and player LEDs; the Pro Controller 2; battery reporting; switching between cable and
+  Bluetooth; the demo levels; and the connection and stability fixes.

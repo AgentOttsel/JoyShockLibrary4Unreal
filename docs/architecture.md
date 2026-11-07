@@ -25,7 +25,7 @@ though little of it is unchanged now.
 | `InputHelpers.h` / `InputHelpers.cpp` | Decoding an input report into controller state, with one parser per family |
 | `GamepadMotion.hpp` | JibbSmart's motion and calibration maths, used as-is |
 | `tools.*` | Byte-fiddling helpers inherited from the original library |
-| `JoyShockLibrary.h` | Now just the library's own entry points; kept so old includes still resolve |
+| `JoyShockLibrary.h` | The library's own entry points: shutdown, and the flag that releases every controller. Also includes the two public headers, for files that rely on it for them |
 
 **`Source/JoyShockLibrary4Unreal/Public/`** — what a game can see.
 
@@ -48,6 +48,7 @@ though little of it is unchanged now.
 | `JoyShockStickTable.cpp` | Each controller's stick signs and sideways turn, for Unreal input and the stick getters alike |
 | `JoyShockPlayerAssignment.cpp` | Which controller belongs to which player: slot allocation, joining and splitting Joy-Cons, grip transitions |
 | `JoyShockInterfaceInternal.h` | The few predicates those two files share |
+| `JoyShockEditorSettings.h` | The plugin's page in Editor Preferences: **Connect Controllers in the Editor**, read at module startup and applied the moment it changes |
 | `JoyShockSubsystem.cpp`, `JoyShockAsyncActions.cpp`, `JoyShockLibrary4Unreal.cpp` | The subsystem, the latent nodes and module startup |
 
 ## Where to change what

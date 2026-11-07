@@ -1,6 +1,6 @@
 # Blueprint nodes
 
-The API is `JSL4U*` and nothing else. The original library's `Jsl*` layer — its raw integer enums, loose float outputs and synchronous device scan — is gone entirely, not merely hidden from Blueprint: half of it had no caller left, and the half that did was folded into the internal `…ForHandle` helpers the `JSL4U*` nodes call. A node takes a connection id; a helper takes a device handle; there is no third convention.
+The API is `JSL4U*` and nothing else. A node takes a connection id; the internal `…ForHandle` helpers the nodes call take a device handle; there is no third convention.
 
 Node names and tooltips state units, invalid-result behavior and when Unreal's own Enhanced Input or Force Feedback should be preferred. Tooltips also say which node is the one most games need, and which exist only for less common cases.
 

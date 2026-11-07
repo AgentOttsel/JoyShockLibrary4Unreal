@@ -2,7 +2,7 @@
 
 | Controller | Connection | State |
 |---|---|---|
-| Pro Controller 2 | USB and Bluetooth | Tested on USB; see [Hardware support](hardware.md) for what is confirmed |
+| Pro Controller 2 | USB and Bluetooth | Tested on USB and Bluetooth; see [Hardware support](hardware.md) for what is confirmed |
 | Joy-Con 2 | Bluetooth only | Implemented, not yet confirmed working |
 
 The Switch 2 speaks a new protocol, not compatible with the Switch 1 controllers', so it has its own path
@@ -42,7 +42,9 @@ and reads its input straight from that Nintendo service. What follows from that:
 
 The Joy-Con 2 never appear over USB: the console charges them through the rails, and a cable to a PC gives
 nothing. A Pro Controller 2 already connected by cable stays on the cable; Bluetooth is only used for one
-that is not.
+that is not. Plugging the cable into one on Bluetooth moves its input onto the cable, which ends the
+Bluetooth link; after the cable is pulled, a button press brings it back on Bluetooth as the same controller
+(see [Plugging in a cable while on Bluetooth](troubleshooting.md#plugging-in-a-cable-while-on-bluetooth)).
 
 ## Pro Controller 2
 

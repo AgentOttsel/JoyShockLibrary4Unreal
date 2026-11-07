@@ -116,8 +116,9 @@ The controllers are let go at once, and the editor connects no new ones, Play In
 option is back on. A Switch 2 controller on Bluetooth disconnects, since its link was the editor's. A Joy-Con
 or other Switch 1 controller on Bluetooth stays connected, because its link belongs to Windows, and shows
 the player 1 light, as when Windows first connects it; closing the editor leaves it the same way. Turning
-the option back on looks for controllers again; a Bluetooth controller comes back on a button press. The option is saved per user, in the project's `Saved` folder,
-and only the editor reads it: a Standalone game or a packaged build always connects controllers.
+the option back on looks for controllers again; a Bluetooth controller comes back on a button press. The
+option is saved per user, in the project's `Saved` folder, and only the editor reads it: a Standalone game
+or a packaged build always connects controllers.
 
 Another game with this plugin does not need this: the editor already hands it the Bluetooth controllers
 by itself (see [Switch 2](switch2.md#worth-knowing)).
