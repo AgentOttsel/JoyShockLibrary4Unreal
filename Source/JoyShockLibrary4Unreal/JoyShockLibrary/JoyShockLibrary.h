@@ -24,3 +24,13 @@
 // Returns false if a thread was still running when the wait ran out, in which case its device is left alive
 // on purpose and the hidapi library must not be unloaded.
 bool ShutdownAllDevices();
+
+// While set, this process lets go of every controller and finds no new ones: each polling thread reads it as
+// a disconnect on its next report, so the controller goes through the ordinary teardown (the game is told,
+// the handle or Bluetooth link is closed), and enumeration does nothing until it is cleared. What sets it is
+// the editor's "Connect Controllers in the Editor" preference (R-040), so another program can have them.
+//
+// A flag rather than a call that tears the devices down: the polling thread is the only one allowed to free
+// its controller, and it is the one that knows when it is not in the middle of a read.
+void SetAllControllersReleased(bool bReleased);
+bool AreAllControllersReleased();

@@ -11,6 +11,7 @@
 // Split out of JoyShockLibrary.cpp; the registry it fills is declared in JoyShockInternal.h.
 
 #include "JoyShockBlueprintLibrary.h"
+#include "JoyShockLibrary4Unreal/JoyShockLibrary/JoyShockLibrary.h"
 #include <bitset>
 #include "hidapi.h"
 #include <chrono>
@@ -435,6 +436,16 @@ static void bring_devices_online(const TArray<JoyShock*>& DevicesToBringOnline)
 int32 UJoyShockLibrary::ConnectDevices()
 {
 	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
+
+	// Controllers are switched off in the editor (R-040). Before any open, so nothing is touched, and before
+	// discover_bluetooth_switch2, which would start the scan again. Advertisements that arrived meanwhile are
+	// dropped: a controller wanting this editor will advertise again once the option is back on.
+	if (AreAllControllersReleased())
+	{
+		TArray<FSwitch2BleAdvertisement> Ignored;
+		Switch2Ble::DrainDiscovered(Ignored);
+		return 0;
+	}
 
 	// for writing to console:
 	//freopen("CONOUT$", "w", stdout);

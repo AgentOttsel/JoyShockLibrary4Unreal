@@ -431,13 +431,15 @@ static void send_pending_output_reports(JoyShock* jc, FPolledOutputState& out)
 // BEFORE calling ShutdownModule, and from any thread other than the game thread LoadModuleChecked then
 // fails its own check -- so a lookup here kills the editor on close, on a thread whose call stack says
 // nothing about why.
-// A Nintendo controller keeps the last player light it was sent, and on the cable it stays powered after the
-// process lets go of it -- so closing Unreal left a Pro Controller 2 showing player 1 until it was unplugged,
-// as if something still owned it. One last write-only report puts it back to how a controller attached to
-// nothing looks. Only cancel_thread brings a thread here, which only ShutdownAllDevices sets: a controller that
-// dropped is gone, and one switching transport keeps its player. The stream is about to close, so this cannot
-// disturb it.
-static void clear_player_lights_on_exit(JoyShock* jc)
+// A Nintendo controller keeps the last player light it was sent, and it stays powered after the process lets
+// go of it -- on the cable, and a Switch 1 controller on Bluetooth, whose link belongs to Windows -- so closing
+// Unreal left a Pro Controller 2 showing player 1 until it was unplugged, as if something still owned it. One
+// last write-only report puts each controller back to how it looks attached to nothing but Windows: a Switch 1
+// controller on Bluetooth shows player 1 there, as when it is first connected (observed on the user's
+// Joy-Cons, 2026-11-07), so every released Joy-Con looks the same; anything else goes dark. Only shutdown
+// (cancel_thread) and the editor's release (R-040) call this: a controller that dropped is gone, and one
+// switching transport keeps its player. The stream is about to close, so this cannot disturb it.
+static void reset_player_lights_on_exit(JoyShock* jc)
 {
 	if (jc->controller_type != ControllerType::n_switch)
 	{
@@ -449,9 +451,12 @@ static void clear_player_lights_on_exit(JoyShock* jc)
 		return;
 	}
 
-	const bool bSent = jc->is_switch2 ? jc->set_sw2_player_lights(0) : jc->set_switch_player_lights(0);
-	UE_LOG(LogJoyShockLibrary, Log, TEXT("Player lights of device %d cleared on exit: %s"),
-		jc->intHandle, bSent ? TEXT("sent") : TEXT("not sent"));
+	const bool bSwitch1OnBluetooth = !jc->is_switch2 && !jc->is_usb;
+	const unsigned char Mask = bSwitch1OnBluetooth ? 0x01 : 0x00;
+	const bool bSent = jc->is_switch2 ? jc->set_sw2_player_lights(Mask) : jc->set_switch_player_lights(Mask);
+	UE_LOG(LogJoyShockLibrary, Log, TEXT("Player lights of device %d reset on exit (%s): %s"),
+		jc->intHandle, bSwitch1OnBluetooth ? TEXT("player 1, as Windows shows it") : TEXT("off"),
+		bSent ? TEXT("sent") : TEXT("not sent"));
 }
 
 static void finish_polling_thread(JoyShock* jc, FJoyShockLibrary4UnrealModule& JSL4UModule,
@@ -686,7 +691,21 @@ void pollIndividualLoop(JoyShock *jc) {
 		// 10 seconds of no signal means forget this controller
 		int reuseCounter = jc->reuse_counter;
 		int res = 0;
-		if (jc->is_ble() && Switch2Ble::IsYieldedToGame())
+		const bool bReleasedByEditor = AreAllControllersReleased();
+		if (bReleasedByEditor)
+		{
+			// The editor's preference says another program gets the controllers. Same path as the game
+			// release below, for every transport: the ordinary teardown is what closes the handle or the link.
+			UE_LOG(LogJoyShockLibrary, Log,
+				TEXT("Controller %d (%s): controllers are switched off in the editor; releasing this one."),
+				jc->intHandle, *jc->name);
+			// Like a closed editor, a released controller should not keep showing a player it no longer has.
+			// Here and not after the loop: the disconnect branch below takes _connectedLock and keeps it into
+			// the teardown, and a HID write has no timeout.
+			reset_player_lights_on_exit(jc);
+			res = -1;
+		}
+		else if (jc->is_ble() && Switch2Ble::IsYieldedToGame())
 		{
 			// A game on this machine wants this controller, and it cannot even see it while this process holds
 			// the link. Read as a disconnect, so the controller goes through the ordinary teardown -- the game
@@ -721,7 +740,9 @@ void pollIndividualLoop(JoyShock *jc) {
 			const FString FallbackPath = jc->fallback_path;
 			jc->modifying_lock.Unlock();
 
-			if (!FallbackPath.IsEmpty())
+			// Released on purpose, not unplugged: falling back to the radio would only take the link the
+			// release is meant to let go of. The teardown unmaps both paths.
+			if (!FallbackPath.IsEmpty() && !bReleasedByEditor)
 			{
 				const FString AbandonedPath = jc->path;
 				// Lock-free for the same reason as the swap onto the cable above: the init inside can
@@ -1074,7 +1095,7 @@ void pollIndividualLoop(JoyShock *jc) {
 
 	if (jc->cancel_thread)
 	{
-		clear_player_lights_on_exit(jc);
+		reset_player_lights_on_exit(jc);
 	}
 
 	finish_polling_thread(jc, JSL4UModule, bReceivedInput, lockedThread, numTimeOuts);

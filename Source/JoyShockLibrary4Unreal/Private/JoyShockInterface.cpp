@@ -20,6 +20,7 @@
 #include "JoyShockStickTable.h"
 #include "JoyShockLibrary4Unreal/JoyShockLibrary/Switch2Bluetooth.h"
 #include "JoyShockLibrary4Unreal/JoyShockLibrary/JoyShockInternal.h"
+#include "JoyShockLibrary4Unreal/JoyShockLibrary/JoyShockLibrary.h"
 #define LOCTEXT_NAMESPACE "JoyShockLibrary"
 
 // The library frees a device's handle the moment the device goes, and hands the lowest free one to the next
@@ -1417,9 +1418,9 @@ bool FJoyShockInterface::TryParkSwitch2(int32 DeviceHandle, FControllerState& St
 	{
 		return false;
 	}
-	// The editor letting a game have its Bluetooth controllers is a real departure: the controller is going
-	// to another process, not to the cable.
-	if (Switch2Ble::IsYieldedToGame())
+	// The editor letting a game have its Bluetooth controllers, or letting every controller go (R-040), is a
+	// real departure: the controller is going to another process, not to the cable.
+	if (Switch2Ble::IsYieldedToGame() || AreAllControllersReleased())
 	{
 		return false;
 	}

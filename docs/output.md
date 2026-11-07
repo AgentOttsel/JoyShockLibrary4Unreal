@@ -82,3 +82,6 @@ failing the write cannot be told apart from one that is not running.
 which blocks the plugin's set-up and rumble. Close Steam while using it; the plugin logs a warning and takes
 the interface back once Steam closes. Rumble also has a fallback that works without that interface, and
 Bluetooth is not affected.
+
+**The Unreal editor itself** can be the other application, for a program running beside it. See
+[Using the controllers in another program](troubleshooting.md#using-the-controllers-in-another-program-with-the-editor-open).

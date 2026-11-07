@@ -103,3 +103,20 @@ clicked, never both. The Output Log says each time input stops or resumes.
 While any game with this plugin is running on the same PC, the editor also leaves every controller's
 player lights, light bar and rumble to that game, so the lights always show the game's players. The
 editor sends its own again when the game closes.
+
+### Using the controllers in another program with the editor open
+
+The editor keeps every controller connected for as long as it is open, so another program that reads them
+-- Unity, for example -- has to compete with it, and a Switch 2 on Bluetooth never reaches that program at
+all, since a connected controller stops advertising. To hand them over, open **Edit → Editor Preferences →
+Plugins → JoyShockLibrary4Unreal** and turn off **Connect Controllers in the Editor**.
+
+The controllers are let go at once, and the editor connects no new ones, Play In Editor included, until the
+option is back on. A Switch 2 controller on Bluetooth disconnects, since its link was the editor's. A Joy-Con
+or other Switch 1 controller on Bluetooth stays connected, because its link belongs to Windows, and shows
+the player 1 light, as when Windows first connects it; closing the editor leaves it the same way. Turning
+the option back on looks for controllers again; a Bluetooth controller comes back on a button press. The option is saved per user, in the project's `Saved` folder,
+and only the editor reads it: a Standalone game or a packaged build always connects controllers.
+
+Another game with this plugin does not need this: the editor already hands it the Bluetooth controllers
+by itself (see [Switch 2](switch2.md#worth-knowing)).

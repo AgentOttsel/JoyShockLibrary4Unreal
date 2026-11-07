@@ -160,6 +160,14 @@ unsigned char PlayerNumberToDualSenseLedMask(int32 PlayerNumber)
 		: 0;
 }
 
+namespace
+{
+	std::atomic<bool> GAllControllersReleased{ false };
+}
+
+void SetAllControllersReleased(bool bReleased) { GAllControllersReleased.store(bReleased); }
+bool AreAllControllersReleased() { return GAllControllersReleased.load(); }
+
 // Stops every controller's polling thread and destroys the devices, in that order. Returns false if any
 // thread was still running when the wait ran out, which means its device (and the hidapi handle inside it)
 // is deliberately left alive for the process to reclaim.

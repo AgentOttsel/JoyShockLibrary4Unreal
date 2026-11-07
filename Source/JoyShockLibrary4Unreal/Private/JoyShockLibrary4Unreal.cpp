@@ -4,6 +4,7 @@
 #include "JoyShockBlueprintLibrary.h"
 
 #include "JoyShockInterface.h"
+#include "JoyShockEditorSettings.h"
 // For ShutdownAllDevices(), called by ShutdownModule below.
 #include "JoyShockLibrary4Unreal/JoyShockLibrary/JoyShockLibrary.h"
 #include "JoyShockLibrary4Unreal/JoyShockLibrary/Switch2Bluetooth.h"
@@ -52,6 +53,59 @@ static FTSTicker::FDelegateHandle GBluetoothClaimWatcher;
 // Game thread only: the watcher's last answer, so it acts on changes rather than on every check.
 static bool GBluetoothYieldedToGame = false;
 
+// Game thread only: whether this editor has let go of every controller because of the "Connect Controllers in
+// the Editor" preference (R-040), so a change is acted on once. The polling threads and enumeration read the
+// library's own flag (SetAllControllersReleased), not this.
+static bool GEditorReleasedControllers = false;
+
+static void ApplyEditorControllerPreference(FJoyShockLibrary4UnrealModule& Module, bool bConnectControllers)
+{
+	// A Standalone game or a packaged build always connects controllers, and a commandlet takes no part.
+	if (!GIsEditor || IsRunningCommandlet())
+	{
+		return;
+	}
+
+	const bool bRelease = !bConnectControllers;
+	if (bRelease == GEditorReleasedControllers)
+	{
+		return;
+	}
+	GEditorReleasedControllers = bRelease;
+	SetAllControllersReleased(bRelease);
+
+	if (bRelease)
+	{
+		UE_LOG(LogJoyShockLibrary, Log,
+			TEXT("Connect Controllers in the Editor is off: the editor is letting go of every controller, Bluetooth included, and connects no new ones until it is back on."));
+		// The polling threads see the flag on their next report and retire their controllers. Stopping the
+		// scan is what leaves a Switch 2 free to connect to the other program when it advertises.
+		Switch2Ble::StopScan();
+	}
+	else
+	{
+		UE_LOG(LogJoyShockLibrary, Log,
+			TEXT("Connect Controllers in the Editor is on: the editor is looking for controllers again. Press a button on a Bluetooth controller to bring it back."));
+		// The enumeration pass restarts the scan, on its own thread, where a blocking adapter call costs nothing.
+		Module.RequestConnectDevices();
+	}
+}
+
+#if WITH_EDITOR
+void UJSL4UEditorSettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(UJSL4UEditorSettings, bConnectControllersInEditor))
+	{
+		SaveConfig();
+		// At once, not on the next editor start: the point is to hand the controller over without closing
+		// the editor.
+		ApplyEditorControllerPreference(FJoyShockLibrary4UnrealModule::GetInstance(), bConnectControllersInEditor);
+	}
+}
+#endif
+
 static bool IsBluetoothClaimedByGame()
 {
 #if PLATFORM_WINDOWS
@@ -81,6 +135,11 @@ static void UpdateBluetoothClaim(FJoyShockLibrary4UnrealModule& Module)
 		// The polling threads see the flag on their next report and retire their controllers; stopping the
 		// scan here is what keeps the editor from taking them straight back when they advertise for the game.
 		Switch2Ble::StopScan();
+	}
+	else if (AreAllControllersReleased())
+	{
+		UE_LOG(LogJoyShockLibrary, Log,
+			TEXT("The game that had the Bluetooth controllers closed; Connect Controllers in the Editor is off, so the editor leaves them alone."));
 	}
 	else
 	{
@@ -184,6 +243,9 @@ void FJoyShockLibrary4UnrealModule::StartupModule()
 	{
 		if (GIsEditor)
 		{
+			// The preference as saved, so an editor opened with it off never touches a controller at all.
+			ApplyEditorControllerPreference(*this, GetDefault<UJSL4UEditorSettings>()->bConnectControllersInEditor);
+
 			GBluetoothYieldedToGame = IsBluetoothClaimedByGame();
 			Switch2Ble::SetYieldedToGame(GBluetoothYieldedToGame);
 			GBluetoothClaimWatcher = FTSTicker::GetCoreTicker().AddTicker(
@@ -243,7 +305,12 @@ void FJoyShockLibrary4UnrealModule::StartupModule()
 			// ShutdownModule returns. RequestConnectDevices does nothing once shutdown has begun.
 			RequestConnectDevices();
 		});
-		Switch2Ble::StartScan();
+		// With controllers switched off in the editor the callback still goes in, so turning them back on needs
+		// only an enumeration pass, which starts the scan itself.
+		if (!AreAllControllersReleased())
+		{
+			Switch2Ble::StartScan();
+		}
 	});
 }
 
