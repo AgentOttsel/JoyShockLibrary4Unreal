@@ -40,8 +40,9 @@ The plugin recognises both as one controller by its MAC address, moves input ont
 radio when the cable is pulled, and keeps the same connection id, player slot and Pawn throughout, so the
 game sees neither a connect nor a disconnect.
 
-A Pro Controller 2 cannot keep both: the cable ends its Bluetooth link, and pulling the cable means a
-new Bluetooth connection. The plugin recognises it on the other side by the serial stored in the
+A Pro Controller 2 cannot keep both: the set-up that moves its input onto the cable ends its Bluetooth
+link, and after the cable is pulled it stays off until a button is pressed, which makes a new Bluetooth
+connection. The plugin recognises it on the other side by the serial stored in the
 controller and carries it on as the same controller -- same connection id, player slot and Pawn, no
 connect or disconnect -- after a pause in its input of a few seconds while the new connection comes up.
 If it does not come back within 10 seconds (switched off, out of range), the disconnect is reported then.
