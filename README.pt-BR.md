@@ -1,5 +1,9 @@
 **Português** · [English](README.md)
 
+> [!NOTE]
+> Esta página é uma tradução e pode estar atrás da versão em inglês, que é a mais atualizada:
+> **[README.md](README.md)**. Se as duas divergirem, vale a inglesa.
+
 # JoyShockLibrary4Unreal
 
 Plugin para Unreal Engine que faz controles de PlayStation e Nintendo funcionarem nativamente no jogo:

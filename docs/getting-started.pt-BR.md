@@ -1,5 +1,9 @@
 **Português** · [English](getting-started.md)
 
+> [!NOTE]
+> Esta página é uma tradução e pode estar atrás da versão em inglês, que é a mais atualizada:
+> **[getting-started.md](getting-started.md)**. Se as duas divergirem, vale a inglesa.
+
 # Primeiros passos
 
 São três níveis, e a maioria dos projetos só precisa do primeiro:
