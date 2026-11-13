@@ -11,7 +11,7 @@ namespace JSL4UStickTable
 	// before any Enhanced Input modifier; the right stick's vertical reads -1 there for every controller,
 	// because of the engine's own negation described in the header, so +1 below means the controller sends
 	// up as +1. Derived rows reproduce what the code before this table did, which no one has reported wrong,
-	// and are waiting for a measurement on the hardware named.
+	// and are waiting for a measurement.
 	static const FRow Rows[] =
 	{
 		// Sony's report counts each Y axis from the top, so up is the low byte.
@@ -19,21 +19,21 @@ namespace JSL4UStickTable
 			TEXT("Antonio, 2026-11-06: DualShock 4 over USB") },
 		{ TEXT("DualSense"), EStickLayout::Whole, +1, -1, +1, -1, ESidewaysTurn::None,
 			TEXT("Derived: same byte layout as the DualShock 4. Also the DualSense Edge, which reports as a ")
-			TEXT("DualSense. Unmeasured; Renan has both") },
+			TEXT("DualSense. Unmeasured") },
 
 		// Nintendo's sticks count up as positive on both slots of every controller.
 		{ TEXT("Switch2ProController"), EStickLayout::Whole, +1, +1, +1, +1, ESidewaysTurn::None,
 			TEXT("Antonio, 2026-11-06: Pro Controller 2 over USB and Bluetooth") },
 		{ TEXT("SwitchProController"), EStickLayout::Whole, +1, +1, +1, +1, ESidewaysTurn::None,
-			TEXT("Derived. Unmeasured; Renan has one") },
+			TEXT("Derived. Unmeasured") },
 		{ TEXT("JoyConLeft"), EStickLayout::LeftHalf, +1, +1, +1, +1, ESidewaysTurn::CounterClockwise,
 			TEXT("Antonio, 2026-11-06: Joy-Con (L) sideways and in a joined pair") },
 		{ TEXT("JoyConRight"), EStickLayout::RightHalf, +1, +1, +1, +1, ESidewaysTurn::Clockwise,
 			TEXT("Antonio, 2026-11-06: Joy-Con (R) sideways and in a joined pair") },
 		{ TEXT("JoyCon2Left"), EStickLayout::LeftHalf, +1, +1, +1, +1, ESidewaysTurn::CounterClockwise,
-			TEXT("Derived. Unmeasured; Renan has a pair") },
+			TEXT("Derived. Unmeasured") },
 		{ TEXT("JoyCon2Right"), EStickLayout::RightHalf, +1, +1, +1, +1, ESidewaysTurn::Clockwise,
-			TEXT("Derived. Unmeasured; Renan has a pair") },
+			TEXT("Derived. Unmeasured") },
 	};
 
 	static const FRow NeutralRow =
