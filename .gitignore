@@ -15,15 +15,15 @@ Saved
 # AI coding agents. Everything an agent leaves behind is either machine-specific
 # (absolute paths, tool permissions) or a scratch copy of the repo, so the shared
 # settings and skills are the only things here that belong in the repository.
-.claude/settings.local.json
-.claude/worktrees/
-.claude/**/*.bak
-.claude/shell-snapshots/
-.claude/statsig/
-.claude/todos/
+.claude/
+.trail/
 .codex/
 .cursor/
 .aider*
+CLAUDE.md
+DECISIONS.md
+HANDOFF.md
+ROADMAP.md
 
 # Editors
 .vscode/
