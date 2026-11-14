@@ -364,16 +364,15 @@ public:
 		meta = (DisplayName = "JSL4U Get Right Stick", ToolTip = "Returns one controller's current right-stick position, from -1 to 1. Reads that device directly, so it answers before the controller belongs to any player -- for assignment screens and diagnostics. For gameplay, bind Enhanced Input instead."))
 	static FVector2D JSL4UGetRightStick(int64 ConnectionId);
 
-	// This engine frame's gyro, in degrees per second, converted to the controller's gyro space: every sample
-	// that arrived, played back over the time this frame covers (FGyroTimeSlicer). The same value for every
-	// call within a frame; the name predates that and is kept for existing callers.
+	// The average gyro velocity, in degrees per second and in the controller's gyro space, over the time since
+	// the previous call, then cleared: every sample counts in exactly one call, however often it is called.
 	static void GetAndFlushAccumulatedGyroForHandle(int32 deviceId, float& gyroX, float& gyroY, float& gyroZ);
 
 	// The same per-frame gyro in the controller's own frame, for Unreal's motion input.
 	static void GetFrameGyroForHandle(int32 deviceId, float& gyroX, float& gyroY, float& gyroZ);
 
 	UFUNCTION(BlueprintCallable, Category = "JoyShock Library|Motion",
-		meta = (DisplayName = "JSL4U Get And Clear Accumulated Gyro", ToolTip = "Returns this frame's gyro angular velocity in degrees per second, built from every report received and the time each one covers, so it turns smoothly whether the controller reports faster or slower than the frame rate. Values use Unreal axes."))
+		meta = (DisplayName = "JSL4U Get And Clear Accumulated Gyro", ToolTip = "Returns the gyro's average angular velocity, in degrees per second, since the previous call, then clears it. Multiply by the time since your last call for the rotation in degrees: every report counts in exactly one call, however often you call it, so it suits mouse-like aiming. Call it from one place per controller. Values use Unreal axes."))
 	static FVector JSL4UGetAndClearAccumulatedGyro(int64 ConnectionId);
 
 	// Sets how gyro input is transformed. GetAndFlushAccumulatedGyroForHandle, GetRawIMUStateForHandle and the

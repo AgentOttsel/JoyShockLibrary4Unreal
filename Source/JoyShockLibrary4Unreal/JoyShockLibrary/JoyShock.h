@@ -131,14 +131,21 @@ public:
 
 	GamepadMotion motion;
 
-	// The calibrated, local-frame gyro, as one velocity per game frame. Guarded by modifying_lock. Sliced at
-	// most once per engine frame, so Unreal's motion input and the Blueprint getter read the same value
+	// The calibrated, local-frame gyro, as one velocity per game frame, for Unreal's motion input. Guarded by
+	// modifying_lock. Sliced at most once per engine frame, so every reader in a frame gets the same value
 	// rather than each taking a share of the samples.
 	FGyroTimeSlicer gyro_slicer;
 	uint64 gyro_slice_frame = MAX_uint64;
 	float frame_gyro_x = 0.f;
 	float frame_gyro_y = 0.f;
 	float frame_gyro_z = 0.f;
+
+	// The calibrated, local-frame turn in degrees since JSL4U Get And Clear Accumulated Gyro last read it, and
+	// when that was (steady clock seconds, negative before the first read). Guarded by modifying_lock.
+	float cumulative_turn_x = 0.f;
+	float cumulative_turn_y = 0.f;
+	float cumulative_turn_z = 0.f;
+	double cumulative_flush_seconds = -1.0;
 
 	int32 gyroSpace = 0;
 
@@ -518,6 +525,14 @@ public:
 
 	// The same, converted to this controller's gyro space.
 	void get_frame_gyro_in_gyro_space(uint64 engineFrame, float& gyroX, float& gyroY, float& gyroZ);
+
+	// Game thread: the average gyro velocity, in degrees per second and in this controller's gyro space, over
+	// the time since the previous call, then cleared. Independent of the per-frame slice: every sample counts
+	// in exactly one call however often the game asks, so it has one reader per controller. Zero on the first.
+	void get_and_flush_cumulative_gyro(float& gyroX, float& gyroY, float& gyroZ);
+
+	// Converts a local-frame gyro velocity to this controller's gyro space (setGyroSpace), in place.
+	void to_gyro_space(float& gyroX, float& gyroY, float& gyroZ);
 
 	void reset_continuous_calibration();
 

@@ -95,7 +95,7 @@ Enhanced Input instead.
 | **JSL4U Get Raw IMU State** | The same, ignoring the gyro space |
 | **JSL4U Get Motion State** | Orientation, acceleration and gravity, gravity-corrected |
 | **JSL4U Get Raw Motion State** | The same, untransformed |
-| **JSL4U Get And Clear Accumulated Gyro** | This frame's gyro angular velocity (degrees per second) in the controller's gyro space, built from every report and the time each covers. The same value for every call in a frame |
+| **JSL4U Get And Clear Accumulated Gyro** | The gyro's average angular velocity (degrees per second) in the controller's gyro space since the previous call, then cleared. Times the time since your last call, it is the turn in degrees, with every report counted once however often you call it — the node for mouse-like aiming. One caller per controller |
 | **JSL4U Set Gyro Space** | Local, World or Player Space; Player Space is the usual choice for aiming |
 
 ### Gyro Calibration

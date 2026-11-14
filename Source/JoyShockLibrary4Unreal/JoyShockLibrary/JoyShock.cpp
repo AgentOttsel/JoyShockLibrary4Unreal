@@ -250,9 +250,41 @@ JoyShock::~JoyShock() {
 #endif
 }
 void JoyShock::push_gyro_sample(float sampleSeconds, float gyroX, float gyroY, float gyroZ) {
+	// The turn a sample stands for is its velocity over the time it covers, capped the way the slicer caps it:
+	// a report after a long silence measures the motion now, not the silence, and must not count it as turning.
+	const float coveredSeconds = FMath::Clamp(sampleSeconds, 0.f, FGyroTimeSlicer::MaxHoldSeconds);
 	modifying_lock.Lock();
 	gyro_slicer.Push(sampleSeconds, gyroX, gyroY, gyroZ);
+	cumulative_turn_x += gyroX * coveredSeconds;
+	cumulative_turn_y += gyroY * coveredSeconds;
+	cumulative_turn_z += gyroZ * coveredSeconds;
 	modifying_lock.Unlock();
+}
+void JoyShock::get_and_flush_cumulative_gyro(float& gyroX, float& gyroY, float& gyroZ) {
+	const double nowSeconds = std::chrono::duration<double>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+	gyroX = gyroY = gyroZ = 0.f;
+	modifying_lock.Lock();
+	if (cumulative_flush_seconds < 0.0) {
+		// The first read: what turned since the controller connected belongs to no reader's interval, and
+		// spreading it over this one would be a jump. Start counting from here.
+		cumulative_turn_x = cumulative_turn_y = cumulative_turn_z = 0.f;
+		cumulative_flush_seconds = nowSeconds;
+	}
+	else if (nowSeconds > cumulative_flush_seconds) {
+		// Divided by the reader's own interval, not by how many samples arrived: a game multiplying this by
+		// its frame time gets back exactly the turn measured since its last read. A frame with no report is
+		// zero instead of a repeat of the last velocity, and the late reports pay that frame back when they
+		// arrive, so a quiet Bluetooth link neither drops turn nor drifts.
+		const float elapsed = static_cast<float>(nowSeconds - cumulative_flush_seconds);
+		gyroX = cumulative_turn_x / elapsed;
+		gyroY = cumulative_turn_y / elapsed;
+		gyroZ = cumulative_turn_z / elapsed;
+		cumulative_turn_x = cumulative_turn_y = cumulative_turn_z = 0.f;
+		cumulative_flush_seconds = nowSeconds;
+	}
+	modifying_lock.Unlock();
+	to_gyro_space(gyroX, gyroY, gyroZ);
 }
 void JoyShock::get_frame_gyro(uint64 engineFrame, float& gyroX, float& gyroY, float& gyroZ) {
 	modifying_lock.Lock();
@@ -269,6 +301,9 @@ void JoyShock::get_frame_gyro(uint64 engineFrame, float& gyroX, float& gyroY, fl
 }
 void JoyShock::get_frame_gyro_in_gyro_space(uint64 engineFrame, float& gyroX, float& gyroY, float& gyroZ) {
 	get_frame_gyro(engineFrame, gyroX, gyroY, gyroZ);
+	to_gyro_space(gyroX, gyroY, gyroZ);
+}
+void JoyShock::to_gyro_space(float& gyroX, float& gyroY, float& gyroZ) {
 	float gravX, gravY, gravZ;
 	modifying_lock.Lock();
 	motion.GetGravity(gravX, gravY, gravZ);

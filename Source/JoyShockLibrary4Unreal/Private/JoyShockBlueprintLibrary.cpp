@@ -1184,7 +1184,7 @@ void UJoyShockLibrary::GetAndFlushAccumulatedGyroForHandle(int32 deviceId, float
 	
 	JoyShock* jc = GetJoyShockFromHandle(deviceId);
 	if (jc != nullptr) {
-		jc->get_frame_gyro_in_gyro_space(GFrameCounter, gyroX, gyroY, gyroZ);
+		jc->get_and_flush_cumulative_gyro(gyroX, gyroY, gyroZ);
 		return;
 	}
 	gyroX = gyroY = gyroZ = 0.f;

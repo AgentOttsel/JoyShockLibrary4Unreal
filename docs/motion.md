@@ -24,8 +24,16 @@ a Pro Controller 2 over Bluetooth sends fewer reports than most games draw frame
 cable sends several per frame. Each report covers the time since the one before it, and every frame gets
 exactly the stretch of time it spans, so the camera turns smoothly either way and no report is lost. When
 reports stop, the last turn is held for at most 50 ms and then drops to zero, so a controller going quiet
-mid-turn does not keep turning the camera. **JSL4U Get And Clear Accumulated Gyro** returns the same value
-in the controller's gyro space. **JSL4U Get IMU State** is still the latest report as it arrived.
+mid-turn does not keep turning the camera. **JSL4U Get IMU State** is still the latest report as it arrived.
+
+**JSL4U Get And Clear Accumulated Gyro is for mouse-like aiming**, where turning the controller moves the
+crosshair by that much and stopping stops it. It returns the average angular velocity since your previous
+call, in the controller's gyro space, and clears it; multiply by the time since that call and you have the
+turn in degrees. Each report counts by the time it covers, in exactly one call, so nothing is lost whether
+you call it every frame or from a timer. A call with no new report returns zero rather than repeating the
+last value, and the late report adds that moment back when it arrives, so a quiet Bluetooth link neither
+drops turn nor drifts. It clears on every call, so read it from one place per controller; the first call
+returns zero.
 
 Pitch and roll from **Get Motion State** are absolute: they stay anchored to real-world down. Yaw drifts
 slowly, as it must without a magnetic or visual reference, which is why a game that maps absolute
