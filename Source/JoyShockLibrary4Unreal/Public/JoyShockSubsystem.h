@@ -146,5 +146,6 @@ private:
 	FDelegateHandle DisconnectedHandle;
 	FDelegateHandle PairingChangedHandle;
 	FDelegateHandle FunctionBlockedHandle;
+	FDelegateHandle HandedOverHandle;
 	TMap<int32, FJSL4UControllerInfo> LastControllerInfoByDeviceId;
 };

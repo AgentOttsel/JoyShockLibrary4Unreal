@@ -210,8 +210,7 @@ public:
 	 * Battery moves over minutes, so this polls once a second rather than adding a per-report event path;
 	 * a controller that is already low when the node activates is reported on the first poll.
 	 *
-	 * Controllers reporting Unknown (the Switch 2 Pro Controller does) never raise On Low Battery -- an
-	 * absent reading is not a flat battery.
+	 * Controllers reporting Unknown never raise On Low Battery -- an absent reading is not a flat battery.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "JoyShock Library|Events",
 		meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject",

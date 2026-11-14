@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <atomic>
 #include "tools.h"
+#include "GyroTimeSlicer.h"
 #include <cstring>
 
 #ifdef __GNUC__
@@ -112,6 +113,13 @@ public:
 	std::chrono::steady_clock::time_point last_polled;
 	float delta_time = 1.0;
 
+	// Input reports per second, counted where each report is handled rather than once per game frame, so
+	// the figure is the controller's and not the frame rate's. The window is the polling thread's alone;
+	// only the published rate crosses to the game thread.
+	int32 reports_in_rate_window = 0;
+	std::chrono::steady_clock::time_point report_rate_window_start = std::chrono::steady_clock::now();
+	std::atomic<float> reports_per_second{ 0.f };
+
 	FJoyShockState simple_state = {};
 	FJoyShockState last_simple_state = {};
 
@@ -123,10 +131,21 @@ public:
 
 	GamepadMotion motion;
 
-	float cumulative_gyro_x = 0.f;
-	float cumulative_gyro_y = 0.f;
-	float cumulative_gyro_z = 0.f;
-	int32 num_cumulative_gyro_samples = 0;
+	// The calibrated, local-frame gyro, as one velocity per game frame, for Unreal's motion input. Guarded by
+	// modifying_lock. Sliced at most once per engine frame, so every reader in a frame gets the same value
+	// rather than each taking a share of the samples.
+	FGyroTimeSlicer gyro_slicer;
+	uint64 gyro_slice_frame = MAX_uint64;
+	float frame_gyro_x = 0.f;
+	float frame_gyro_y = 0.f;
+	float frame_gyro_z = 0.f;
+
+	// The calibrated, local-frame turn in degrees since JSL4U Get And Clear Accumulated Gyro last read it, and
+	// when that was (steady clock seconds, negative before the first read). Guarded by modifying_lock.
+	float cumulative_turn_x = 0.f;
+	float cumulative_turn_y = 0.f;
+	float cumulative_turn_z = 0.f;
+	double cumulative_flush_seconds = -1.0;
 
 	int32 gyroSpace = 0;
 
@@ -158,6 +177,7 @@ public:
 	// and nothing outside this family reports them. All are written by the polling thread and read by the
 	// game thread, hence atomic.
 	std::atomic<float> sw2_battery_volts{ 0.f };
+	std::atomic<float> sw2_battery_current{ 0.f };
 	std::atomic<float> sw2_temperature_celsius{ 0.f };
 	std::atomic<int32> sw2_magnetometer_x{ 0 };
 	std::atomic<int32> sw2_magnetometer_y{ 0 };
@@ -312,6 +332,9 @@ public:
 	unsigned char sw2_out_pipe = 0x02;
 	unsigned char sw2_in_pipe = 0x82;
 	bool sw2_init_succeeded = false;
+	// Whether the last USB init failed only because another process held the command interface -- the one
+	// failure the polling thread keeps retrying without limit, since waiting for that lease is cheap.
+	bool sw2_init_lacked_interface = false;
 
 	// Switch 2 HD rumble: the controller consumes a stream of amplitude/frequency frames, each packet
 	// carrying a rolling 4-bit id it uses to drop duplicates. Two routes can carry them (see
@@ -354,12 +377,21 @@ public:
 	uint32 left_grip_colour = 0xFFFFFF;
 	uint32 right_grip_colour = 0xFFFFFF;
 
+	// The Switch 2 info block's bytes before the colours (serial and ids), as hex. The same block is read over
+	// the cable and over Bluetooth, so this names one physical controller across both -- which its HID path
+	// cannot, and a MAC cannot either, since the cable exposes none. It is what lets a Pro Controller 2 moving
+	// between the two stay one controller to the game. Empty until the block has been read, and for every
+	// other family. Guarded by modifying_lock.
+	FString sw2_info_identity;
+	void set_sw2_info_identity(const uint8* InfoBlock);
+
 	int32 player_number = 0;
 	int32 reuse_counter = 0;
 
-	bool cancel_thread = false;
-	bool delete_on_finish = false;
-	bool remove_on_finish = true;
+	// Written by shutdown and read by the polling thread with no lock of the reader's own, hence atomic.
+	std::atomic<bool> cancel_thread{ false };
+	std::atomic<bool> delete_on_finish{ false };
+	std::atomic<bool> remove_on_finish{ true };
 	std::thread* thread = nullptr;
 
 	// Set by the polling thread as the last thing it does, when it is leaving without freeing this device --
@@ -485,9 +517,22 @@ public:
 
 	~JoyShock();
 
-	void push_cumulative_gyro(float gyroX, float gyroY, float gyroZ);
-	
+	// Polling thread: one calibrated, local-frame gyro sample, covering sampleSeconds since the one before it.
+	void push_gyro_sample(float sampleSeconds, float gyroX, float gyroY, float gyroZ);
+
+	// Game thread: this engine frame's gyro in the controller's own frame, the same for every caller in it.
+	void get_frame_gyro(uint64 engineFrame, float& gyroX, float& gyroY, float& gyroZ);
+
+	// The same, converted to this controller's gyro space.
+	void get_frame_gyro_in_gyro_space(uint64 engineFrame, float& gyroX, float& gyroY, float& gyroZ);
+
+	// Game thread: the average gyro velocity, in degrees per second and in this controller's gyro space, over
+	// the time since the previous call, then cleared. Independent of the per-frame slice: every sample counts
+	// in exactly one call however often the game asks, so it has one reader per controller. Zero on the first.
 	void get_and_flush_cumulative_gyro(float& gyroX, float& gyroY, float& gyroZ);
+
+	// Converts a local-frame gyro velocity to this controller's gyro space (setGyroSpace), in place.
+	void to_gyro_space(float& gyroX, float& gyroY, float& gyroZ);
 
 	void reset_continuous_calibration();
 

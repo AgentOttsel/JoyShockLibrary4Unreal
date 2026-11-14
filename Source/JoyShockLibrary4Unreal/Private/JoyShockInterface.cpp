@@ -10,13 +10,26 @@
 #include "JoyShockBlueprintLibrary.h"
 #include "Misc/ConfigCacheIni.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformApplicationMisc.h"
 #include <functional>
 #include <mutex>
 #include <shared_mutex>
 
 #include "JoyShockLibrary4Unreal.h"
 #include "JoyShockInterfaceInternal.h"
+#include "JoyShockStickTable.h"
+#include "JoyShockLibrary4Unreal/JoyShockLibrary/Switch2Bluetooth.h"
+#include "JoyShockLibrary4Unreal/JoyShockLibrary/JoyShockInternal.h"
+#include "JoyShockLibrary4Unreal/JoyShockLibrary/JoyShockLibrary.h"
 #define LOCTEXT_NAMESPACE "JoyShockLibrary"
+
+// The library frees a device's handle the moment the device goes, and hands the lowest free one to the next
+// arrival -- which made a Joy-Con switched on during the wait take the parked controller's handle, end the wait
+// early and inherit its player. Held under a key of its own while parked, the handle stays out of the pool.
+static FString ParkedSwitch2HandleKey(int32 DeviceHandle)
+{
+	return FString::Printf(TEXT("parked-switch2:%d"), DeviceHandle);
+}
 
 static TAutoConsoleVariable<int32> CVarJoyShockDebugInputStalls(
 	TEXT("JoyShock.Debug.InputStalls"), 0,
@@ -295,6 +308,63 @@ void FJoyShockInterface::SendControllerEvents()
 			}
 		}
 
+		// Pro Controllers 2 waiting for their identity (see OnConnectCallback): retried every tick, and let
+		// through once it is in, once nothing is parked any more, or once they have waited long enough.
+		if (DeferredSwitch2Connects.Num() > 0)
+		{
+			constexpr double MaxIdentityWaitSeconds = 5.0;
+			const double Now = FPlatformTime::Seconds();
+			TArray<int32> Waiting;
+			DeferredSwitch2Connects.GetKeys(Waiting);
+			for (int32 DeferredHandle : Waiting)
+			{
+				const bool bWaitedEnough = Now - DeferredSwitch2Connects[DeferredHandle] >= MaxIdentityWaitSeconds;
+				if (OnConnectCallback(DeferredHandle, /*bAllowDeferral*/ !bWaitedEnough))
+				{
+					ConnectedThisTick.Add(DeferredHandle);
+				}
+				if (bWaitedEnough)
+				{
+					DeferredSwitch2Connects.Remove(DeferredHandle);
+				}
+			}
+		}
+
+		// A parked Pro Controller 2 that has not come back on its other transport in time has really gone.
+		if (ParkedSwitch2s.Num() > 0)
+		{
+			FScopeLock ContainerLock(&ControllerContainerLock);
+			const double Now = FPlatformTime::Seconds();
+			bool bRetiredAny = false;
+			for (int32 Index = ParkedSwitch2s.Num() - 1; Index >= 0; --Index)
+			{
+				if (Now - ParkedSwitch2s[Index].ParkedAt >= Switch2HandoverGraceSeconds)
+				{
+					RetireParkedSwitch2(ParkedSwitch2s[Index]);
+					ParkedSwitch2s.RemoveAt(Index);
+					bRetiredAny = true;
+				}
+			}
+			if (bRetiredAny)
+			{
+				RefreshPlayerAssignments();
+			}
+		}
+		// Retired controllers left before anything that went this tick, so they are announced first.
+		DisconnectedThisTick.Insert(RetiredThisTick, 0);
+		RetiredThisTick.Reset();
+		const TArray<TPair<int32, int32>> Handovers = MoveTemp(HandoversThisTick);
+		HandoversThisTick.Reset();
+
+		if (Handovers.Num() > 0 && FJoyShockLibrary4UnrealModule::IsAvailable())
+		{
+			FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
+			for (const TPair<int32, int32>& Handover : Handovers)
+			{
+				JSL4UModule.GetOnDeviceHandedOver().Broadcast(Handover.Key, Handover.Value);
+			}
+		}
+
 		if (DisconnectedThisTick.Num() > 0 || ConnectedThisTick.Num() > 0)
 		{
 			FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
@@ -339,6 +409,21 @@ void FJoyShockInterface::SendControllerEvents()
 	bIsGamepadAttached = !DeviceHandles.IsEmpty();
 	UpdateJoyConGripTransitions(PairingChanges);
 
+	const bool bDispatchInput = ShouldDispatchInput();
+	const bool bInputJustHeldBack = !bDispatchInput && bDispatchedInputLastTick;
+	if (bDispatchInput != bDispatchedInputLastTick)
+	{
+		if (bDispatchInput)
+		{
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("This application is in front again: controller input reaches it."));
+		}
+		else
+		{
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("Another application is in front: controller input is held back until this one is in front again."));
+		}
+	}
+	bDispatchedInputLastTick = bDispatchInput;
+
 	for (int32 Index = DeviceHandles.Num() - 1; Index >= 0; Index--)
 	{
 		int32 DeviceHandle = DeviceHandles[Index];
@@ -369,6 +454,60 @@ void FJoyShockInterface::SendControllerEvents()
 					DeviceHandle, *ControllerState.DeviceName);
 			}
 
+			// A Pro Controller 2 announced before its identity was read (its USB command interface held
+			// elsewhere, and nothing parked to wait for) picks it up here once the read goes through, so it can
+			// still be recognised when it later moves to its other transport.
+			if (ControllerState.Switch2Identity.IsEmpty()
+				&& ControllerState.HardwareDeviceIdentifier == FName(TEXT("Switch2ProController")))
+			{
+				ControllerState.Switch2Identity = UJoyShockLibrary::GetSwitch2IdentityForHandle(DeviceHandle);
+			}
+
+			if (!bDispatchInput)
+			{
+				// Released once, on the frame input stops, for the reason ReleaseAllInput gives for a
+				// disconnect: this application would otherwise keep whatever was held when it lost the front.
+				if (bInputJustHeldBack)
+				{
+					ReleaseAllInput(ControllerState);
+				}
+				else
+				{
+					// Previous follows current while nothing is dispatched, so the first frame back compares
+					// against what the controller is really doing now -- not against the moment input stopped,
+					// which would replay every press and release made in between.
+					FScopeLock Lock(&SimpleStateLock);
+					ControllerState.PreviousSimpleState = ControllerState.SimpleState;
+					ControllerState.PreviousIMUState = ControllerState.IMUState;
+					ControllerState.bAnalogWasJoyConHorizontal = ControllerState.bJoyConHorizontal;
+					ControllerState.bButtonsWereJoyConHorizontal = ControllerState.bJoyConHorizontal;
+				}
+				if (!bInputJustHeldBack)
+				{
+					FScopeLock Lock(&TouchStateLock);
+					ControllerState.PreviousTouchState = ControllerState.TouchState;
+				}
+
+				// The mouse sensor's axes are not part of ReleaseAllInput (it is only fed below), so they are
+				// zeroed here; and its deltas accumulate until consumed, so they are drained and dropped, or the
+				// first frame back would jump by everything moved meanwhile.
+				const bool bMouseLeft = IsJoyConLeftIdentifier(ControllerState.HardwareDeviceIdentifier);
+				const bool bMouseRight = IsJoyConRightIdentifier(ControllerState.HardwareDeviceIdentifier);
+				if (bMouseLeft || bMouseRight)
+				{
+					float DroppedDeltaX = 0.f;
+					float DroppedDeltaY = 0.f;
+					UJoyShockLibrary::ConsumeMouseAxisDeltaForHandle(DeviceHandle, DroppedDeltaX, DroppedDeltaY);
+					OnControllerAnalog(ControllerState.PlatformUser, ControllerState.InputDevice,
+						bMouseLeft ? MouseLeftXKeyName : MouseRightXKeyName, 0.f, ControllerState.PreviousMouseDeltaX);
+					OnControllerAnalog(ControllerState.PlatformUser, ControllerState.InputDevice,
+						bMouseLeft ? MouseLeftYKeyName : MouseRightYKeyName, 0.f, ControllerState.PreviousMouseDeltaY);
+					ControllerState.PreviousMouseDeltaX = 0.f;
+					ControllerState.PreviousMouseDeltaY = 0.f;
+				}
+				continue;
+			}
+
 			{
 				// PlatformUser is the player slot this device is assigned to (see RefreshPlayerAssignments).
 				// Both halves of a joined Joy-Con pair share the same PlatformUser, so their (disjoint)
@@ -383,7 +522,6 @@ void FJoyShockInterface::SendControllerEvents()
 					FScopeLock Lock(&SimpleStateLock);
 					const bool bJoyConLeft = IsJoyConLeftIdentifier(ControllerState.HardwareDeviceIdentifier);
 					const bool bJoyConRight = IsJoyConRightIdentifier(ControllerState.HardwareDeviceIdentifier);
-					const bool bSonyPad = IsSonyIdentifier(ControllerState.HardwareDeviceIdentifier);
 					const int32 SuppressedButtons = ControllerState.SuppressedGripButtons;
 					int32 CurrentButtons = ControllerState.SimpleState.buttons & ~SuppressedButtons;
 					int32 PreviousButtons = ControllerState.PreviousSimpleState.buttons & ~SuppressedButtons;
@@ -394,7 +532,7 @@ void FJoyShockInterface::SendControllerEvents()
 					ProcessButtons(CurrentButtons, PreviousButtons, PlatformUser, InputDevice);
 
 					ProcessAnalogInputs(ControllerState.SimpleState, ControllerState.PreviousSimpleState,
-						bJoyConLeft, bJoyConRight, bSonyPad, ControllerState.bJoyConHorizontal,
+						ControllerState.HardwareDeviceIdentifier, ControllerState.bJoyConHorizontal,
 						ControllerState.bAnalogWasJoyConHorizontal,
 						PlatformUser, InputDevice);
 					ControllerState.bAnalogWasJoyConHorizontal = ControllerState.bJoyConHorizontal;
@@ -404,6 +542,12 @@ void FJoyShockInterface::SendControllerEvents()
 					// library's for no reason.
 					CurrentIMUState = ControllerState.IMUState;
 				}
+
+				// The latest report's gyro is one sample, not this frame's turn: below the frame rate it would
+				// repeat for as long as the controller stays quiet, above it every other sample would be lost.
+				// The frame's own slice of the samples replaces it (FGyroTimeSlicer).
+				UJoyShockLibrary::GetFrameGyroForHandle(DeviceHandle,
+					CurrentIMUState.gyroX, CurrentIMUState.gyroY, CurrentIMUState.gyroZ);
 
 				ProcessIMUState(DeviceHandle, CurrentIMUState, PlatformUser, InputDevice);
 
@@ -650,93 +794,20 @@ void FJoyShockInterface::ProcessButtons(int32 CurrentButtons, int32 PreviousButt
 }
 void FJoyShockInterface::ProcessAnalogInputs(const FJoyShockState& SimpleState,
 	const FJoyShockState& PreviousSimpleState,
-	bool bJoyConLeft,
-	bool bJoyConRight,
-	bool bSonyPad,
+	FName HardwareDeviceIdentifier,
 	bool bHorizontal,
 	bool bWasHorizontal,
 	FPlatformUserId PlatformUser,
 	FInputDeviceId InputDevice)
 {
-	auto PresentSticks = [bJoyConLeft, bJoyConRight, bSonyPad](const FJoyShockState& State, bool bStateHorizontal,
+	// Signs and the sideways grip come from the stick table, the same function the JSL4U stick getters use,
+	// so Unreal input and the getters cannot disagree. Do not add a sign here: see JoyShockStickTable.h,
+	// including why a game reads the right stick's vertical inverted and why that is not ours to undo.
+	auto PresentSticks = [HardwareDeviceIdentifier](const FJoyShockState& State, bool bStateHorizontal,
 		float& OutLeftX, float& OutLeftY, float& OutRightX, float& OutRightY)
 	{
-		if (bJoyConLeft)
-		{
-			if (bStateHorizontal)
-			{
-				// Joy-Con L is rotated counter-clockwise into the solo horizontal grip.
-				OutLeftX = -State.stickLY;
-				OutLeftY = State.stickLX;
-			}
-			else
-			{
-				OutLeftX = State.stickLX;
-				OutLeftY = State.stickLY;
-			}
-			OutRightX = 0.0f;
-			OutRightY = 0.0f;
-			return;
-		}
-
-		if (bJoyConRight)
-		{
-			// The Switch 1 right-half hardware reports its vertical stick axis with the opposite sign from
-			// Unreal's standard gamepad convention. Normalise the device-local vector first, then rotate that
-			// canonical vector only when the half is held horizontally. Keeping this device-specific here
-			// means a shared Enhanced Input mapping (including To World Space) behaves identically for a
-			// joined Joy-Con pair, DualShock/DualSense and Pro Controllers.
-			const float NormalizedStickX = State.stickRX;
-			const float NormalizedStickY = -State.stickRY;
-			if (bStateHorizontal)
-			{
-				// In the solo-horizontal grip, physical left/right comes from the opposite of the
-				// normalised vertical axis while physical up/down comes from the opposite of X. Keep this
-				// presentation transform separate from the joined-mode Y normalisation above: applying the
-				// same sign to both modes makes horizontal left/right run backwards.
-				OutLeftX = -NormalizedStickY;
-				OutLeftY = -NormalizedStickX;
-				OutRightX = 0.0f;
-				OutRightY = 0.0f;
-			}
-			else
-			{
-				OutLeftX = 0.0f;
-				OutLeftY = 0.0f;
-				OutRightX = NormalizedStickX;
-				// Negated against NormalizedStickY rather than folded into it, because that vector is also
-				// what the horizontal grip above rotates into OutLeftX -- changing it there would send solo
-				// horizontal left/right backwards, which is the trap the note in that branch describes. See
-				// the convention note at the bottom of this lambda for why the sign moved.
-				OutRightY = -NormalizedStickY;
-			}
-			return;
-		}
-
-		OutLeftX = State.stickLX;
-		OutLeftY = State.stickLY;
-		OutRightX = State.stickRX;
-		// The low-level JSL state keeps Sony's normalized convention for direct getters. End-to-end
-		// measurement at the Enhanced Input action shows a Sony pad's right Y arriving with the opposite
-		// sign from the same physical motion on a Pro Controller, so the two are still reconciled here.
-		//
-		// Sony pad, not DualShock 4. This exception named only the pad it was measured on, and the DualSense
-		// -- whose parser branch inverts the raw Y byte identically, a dozen lines from the DualShock 4's --
-		// fell through to the other side of the test and came out inverted against every other controller.
-		// Reported from hardware, long after the convention it breaks was settled.
-		// Correct only the engine-facing presentation so Gamepad_Right2D and To World Space have one
-		// convention across devices without changing JSL getters, motion data, or either left stick.
-		//
-		// Which convention that is was, until now, whatever the Pro Controller happened to report: every
-		// other family was lined up against it. Measured against the engine instead, that was backwards.
-		// Unreal's XInput plugin publishes RightAnalogY straight from XINPUT_GAMEPAD::sThumbRY, which is
-		// positive upwards, so a standard gamepad reads +1 with the right stick pushed up -- and these
-		// controllers were reading -1 there, which is why an Xbox pad's right stick came out inverted
-		// against every controller this plugin drives. Both signs below are flipped from what they were;
-		// the relationship between the families is untouched, only the shared convention moved onto the
-		// engine's. A game that had inverted this axis to compensate should now drop that inversion, and it
-		// will hold for every pad instead of all but one.
-		OutRightY = bSonyPad ? State.stickRY : -State.stickRY;
+		JSL4UStickTable::PresentSticks(State, HardwareDeviceIdentifier, bStateHorizontal,
+			OutLeftX, OutLeftY, OutRightX, OutRightY);
 	};
 
 	float LeftX, LeftY, RightX, RightY;
@@ -750,10 +821,12 @@ void FJoyShockInterface::ProcessAnalogInputs(const FJoyShockState& SimpleState,
 	OnControllerAnalog(PlatformUser, InputDevice, FGamepadKeyNames::RightAnalogX, RightX, PreviousRightX);
 	OnControllerAnalog(PlatformUser, InputDevice, FGamepadKeyNames::RightAnalogY, RightY, PreviousRightY);
 
-	const float LeftTrigger = (bHorizontal && (bJoyConLeft || bJoyConRight)) ? 0.0f : SimpleState.lTrigger;
-	const float RightTrigger = (bHorizontal && (bJoyConLeft || bJoyConRight)) ? 0.0f : SimpleState.rTrigger;
-	const float PreviousLeftTrigger = (bWasHorizontal && (bJoyConLeft || bJoyConRight)) ? 0.0f : PreviousSimpleState.lTrigger;
-	const float PreviousRightTrigger = (bWasHorizontal && (bJoyConLeft || bJoyConRight)) ? 0.0f : PreviousSimpleState.rTrigger;
+	const bool bJoyConHalf = IsJoyConLeftIdentifier(HardwareDeviceIdentifier)
+		|| IsJoyConRightIdentifier(HardwareDeviceIdentifier);
+	const float LeftTrigger = (bHorizontal && bJoyConHalf) ? 0.0f : SimpleState.lTrigger;
+	const float RightTrigger = (bHorizontal && bJoyConHalf) ? 0.0f : SimpleState.rTrigger;
+	const float PreviousLeftTrigger = (bWasHorizontal && bJoyConHalf) ? 0.0f : PreviousSimpleState.lTrigger;
+	const float PreviousRightTrigger = (bWasHorizontal && bJoyConHalf) ? 0.0f : PreviousSimpleState.rTrigger;
 	OnControllerAnalog(PlatformUser, InputDevice, FGamepadKeyNames::LeftTriggerAnalog, LeftTrigger, PreviousLeftTrigger);
 	OnControllerAnalog(PlatformUser, InputDevice, FGamepadKeyNames::RightTriggerAnalog, RightTrigger, PreviousRightTrigger);
 }
@@ -980,9 +1053,29 @@ void FJoyShockInterface::OnTouchCallback(int32 DeviceHandle, const FTouchState& 
 		ProcessTouchState(TouchState, PreviousTouchState, PlatformUser, InputDevice);
 	}*/
 }
-bool FJoyShockInterface::OnConnectCallback(int32 InDeviceHandle)
+bool FJoyShockInterface::OnConnectCallback(int32 InDeviceHandle, bool bAllowDeferral)
 {
 	// UE_LOG(LogJoyShockLibrary, Log, TEXT(">>>>>OnConnectCallback %d"), InDeviceHandle);
+
+	// The connect is queued from the poll thread and drained here a frame later, after that frame's
+	// disconnects. A connection that dies within that frame -- a Pro Controller 2 whose Bluetooth link closed
+	// right after its first report, because the cable arrived -- would otherwise be registered after its own
+	// disconnect: a controller the engine believes connected, with no identity (its handle no longer names
+	// anything). Worse, the next controller to reuse the handle -- that same Pro Controller 2 over USB -- is
+	// then ignored as a duplicate below, and never gets an identity or a player. A handle that is not live
+	// now has nothing to register; whatever takes it next announces itself on its own first report.
+	{
+		TArray<int32> LiveHandles;
+		UJoyShockLibrary::GetConnectedDeviceHandles(LiveHandles);
+		if (!LiveHandles.Contains(InDeviceHandle))
+		{
+			UE_LOG(LogJoyShockLibrary, Verbose,
+				TEXT("Dropping the connect of device %d: it disconnected before the connect was processed."), InDeviceHandle);
+			DeferredSwitch2Connects.Remove(InDeviceHandle);
+			return false;
+		}
+	}
+
 	FScopeLock ContainerLock(&ControllerContainerLock);
 
 	// A device can be announced twice: it announces itself from its poll thread on first input, and this
@@ -996,6 +1089,26 @@ bool FJoyShockInterface::OnConnectCallback(int32 InDeviceHandle)
 			return false;
 		}
 	}
+
+	// A Pro Controller 2 arriving while another is parked may be that one on its other transport, but it can
+	// only be recognised once its identity has been read -- and over the cable that read waits for the USB
+	// command interface, which another process (the editor beside a Standalone) can hold for a couple of
+	// seconds. Announcing it first would make it a new controller for good. So it waits, unannounced, until
+	// the identity is in or the wait runs out; the drain calls back with bAllowDeferral false then.
+	if (bAllowDeferral && ParkedSwitch2s.Num() > 0
+		&& GetHardwareDeviceIdentifier(InDeviceHandle) == FName(TEXT("Switch2ProController"))
+		&& UJoyShockLibrary::GetSwitch2IdentityForHandle(InDeviceHandle).IsEmpty())
+	{
+		if (!DeferredSwitch2Connects.Contains(InDeviceHandle))
+		{
+			DeferredSwitch2Connects.Add(InDeviceHandle, FPlatformTime::Seconds());
+			UE_LOG(LogJoyShockLibrary, Log,
+				TEXT("Controller %d (Pro Controller 2) arrived before its identity could be read; waiting for it before announcing the controller."),
+				InDeviceHandle);
+		}
+		return false;
+	}
+	DeferredSwitch2Connects.Remove(InDeviceHandle);
 
 	DeviceHandles.AddUnique(InDeviceHandle);
 
@@ -1029,6 +1142,59 @@ bool FJoyShockInterface::OnConnectCallback(int32 InDeviceHandle)
 	// intensities into this one's first effect.
 	State.ForceFeedback = FForceFeedbackValues();
 
+	State.DeviceName = GetDeviceName(InDeviceHandle);
+	State.HardwareDeviceIdentifier = GetHardwareDeviceIdentifier(InDeviceHandle);
+	State.Switch2Identity = UJoyShockLibrary::GetSwitch2IdentityForHandle(InDeviceHandle);
+	State.bJoyConHorizontal = IsJoyConLeftIdentifier(State.HardwareDeviceIdentifier)
+		|| IsJoyConRightIdentifier(State.HardwareDeviceIdentifier);
+	State.bAnalogWasJoyConHorizontal = false;
+	State.bButtonsWereJoyConHorizontal = false;
+	State.SuppressedGripButtons = 0;
+
+	// A parked controller whose handle this device has just been given is not coming back under it, so it
+	// leaves now -- its disconnect is announced before this connect, and nothing keyed by the handle mixes
+	// the two up.
+	for (int32 Index = ParkedSwitch2s.Num() - 1; Index >= 0; --Index)
+	{
+		const FParkedSwitch2& Parked = ParkedSwitch2s[Index];
+		if (Parked.DeviceHandle == InDeviceHandle && Parked.Identity != State.Switch2Identity)
+		{
+			RetireParkedSwitch2(Parked);
+			ParkedSwitch2s.RemoveAt(Index);
+		}
+	}
+
+	// The same Pro Controller 2 back on its other transport: it carries on as the controller it was, under
+	// this handle. The game is told nothing -- its Connection Id, its player and its Pawn never changed.
+	const int32 ParkedIndex = State.Switch2Identity.IsEmpty() ? INDEX_NONE
+		: ParkedSwitch2s.IndexOfByPredicate([&State](const FParkedSwitch2& Parked)
+		{
+			return Parked.Identity == State.Switch2Identity;
+		});
+	if (ParkedIndex != INDEX_NONE)
+	{
+		const FParkedSwitch2 Parked = ParkedSwitch2s[ParkedIndex];
+		ParkedSwitch2s.RemoveAt(ParkedIndex);
+		ReleaseUniqueHandle(ParkedSwitch2HandleKey(Parked.DeviceHandle));
+
+		// The input device stayed mapped to its player and registered while parked, so it is reused as is.
+		State.InputDevice = Parked.InputDevice;
+		State.PlatformUser = Parked.PlatformUser;
+		State.ConnectionId = Parked.ConnectionId;
+		if (Parked.PlayerSlot != INDEX_NONE)
+		{
+			PlayerSlotByPrimary.Add(InDeviceHandle, Parked.PlayerSlot);
+		}
+		HandoversThisTick.Add(TPair<int32, int32>(Parked.DeviceHandle, InDeviceHandle));
+
+		UE_LOG(LogJoyShockLibrary, Log,
+			TEXT("Controller %d (%s) is controller %d on its other connection; it keeps its connection and player."),
+			InDeviceHandle, *State.DeviceName, Parked.DeviceHandle);
+		RefreshPlayerAssignments();
+		State.LastInfo = UJoyShockLibrary::GetControllerInfoForHandle(InDeviceHandle);
+		return false;
+	}
+
 	// Allocate a globally-unique input device id for this physical controller. (Using the legacy
 	// RemapControllerIdToPlatformUserAndDevice "best guess" device id here can collide with the keyboard's
 	// device 0 / other controllers, which corrupts the input-device mapper and hangs Enhanced Input's
@@ -1036,13 +1202,6 @@ bool FJoyShockInterface::OnConnectCallback(int32 InDeviceHandle)
 	State.InputDevice = DeviceMapper.AllocateNewInputDeviceId();
 	State.PlatformUser = PLATFORMUSERID_NONE; // assigned (and mapped connected) by RefreshPlayerAssignments
 	State.ConnectionId = NextConnectionId++;
-	State.DeviceName = GetDeviceName(InDeviceHandle);
-	State.HardwareDeviceIdentifier = GetHardwareDeviceIdentifier(InDeviceHandle);
-	State.bJoyConHorizontal = IsJoyConLeftIdentifier(State.HardwareDeviceIdentifier)
-		|| IsJoyConRightIdentifier(State.HardwareDeviceIdentifier);
-	State.bAnalogWasJoyConHorizontal = false;
-	State.bButtonsWereJoyConHorizontal = false;
-	State.SuppressedGripButtons = 0;
 
 	// Register the device's hardware descriptor once, for the lifetime of its device id (replaces the
 	// deprecated per-dispatch FInputDeviceScope).
@@ -1053,6 +1212,7 @@ bool FJoyShockInterface::OnConnectCallback(int32 InDeviceHandle)
 	FInputDeviceRegistry::RegisterDevice(Descriptor);
 
 	RefreshPlayerAssignments();
+	State.LastInfo = UJoyShockLibrary::GetControllerInfoForHandle(InDeviceHandle);
 	return true;
 }
 void FJoyShockInterface::ReleaseAllInput(FControllerState& State)
@@ -1078,7 +1238,6 @@ void FJoyShockInterface::ReleaseAllInput(FControllerState& State)
 
 		const bool bJoyConLeft = IsJoyConLeftIdentifier(State.HardwareDeviceIdentifier);
 		const bool bJoyConRight = IsJoyConRightIdentifier(State.HardwareDeviceIdentifier);
-		const bool bSonyPad = IsSonyIdentifier(State.HardwareDeviceIdentifier);
 
 		// Released against the buttons the engine was actually last told about, which means after the same
 		// suppression and grip transform SendControllerEvents applies -- releasing a raw physical bit would
@@ -1090,7 +1249,7 @@ void FJoyShockInterface::ReleaseAllInput(FControllerState& State)
 
 		const FJoyShockState NeutralState = {};
 		ProcessAnalogInputs(NeutralState, State.SimpleState,
-			bJoyConLeft, bJoyConRight, bSonyPad,
+			State.HardwareDeviceIdentifier,
 			State.bJoyConHorizontal, State.bJoyConHorizontal,
 			PlatformUser, InputDevice);
 
@@ -1116,6 +1275,23 @@ void FJoyShockInterface::ReleaseAllInput(FControllerState& State)
 	MessageHandler->OnMotionDetected(FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector,
 		FVector::ZeroVector, PlatformUser, InputDevice);
 }
+bool FJoyShockInterface::ShouldDispatchInput()
+{
+	// Only the application in front answers the controllers. Unreal itself dispatches gamepad input whether or
+	// not its application is in front (Slate.RequireFocusForGamepadInput defaults off), and that is wrong as
+	// soon as two processes with this plugin share the controllers -- the editor and the Standalone game it
+	// launched: the controller drove the game and walked Slate's navigation frame across the editor behind it,
+	// and the other way round, moved the game on the other monitor while the editor was being used.
+	//
+	// Games included, packaged ones too: a game behind another window does not answer, as most PC games
+	// behave. It also means two game windows on one PC (a multi-process network session) take input only
+	// while in front. Play-In-Editor needs no exception: it runs inside the editor process, so it is in front
+	// whenever the editor is.
+	//
+	// The process stays connected and keeps reading; it only stops handing input to Unreal. Disconnecting
+	// would cost the reconnect and the player slot when it comes back to the front.
+	return FPlatformApplicationMisc::IsThisApplicationForeground();
+}
 bool FJoyShockInterface::OnDisconnectCallback(int32 InDeviceHandle, bool bInHasTimedOut,
 	TArray<FJoyConPairingChange>& OutPairingChanges)
 {
@@ -1139,7 +1315,16 @@ bool FJoyShockInterface::OnDisconnectCallback(int32 InDeviceHandle, bool bInHasT
 	// of SendControllerEvents), which is where MessageHandler may be used.
 	ReleaseAllInput(ControllerState);
 
+	if (TryParkSwitch2(InDeviceHandle, ControllerState, bInHasTimedOut))
+	{
+		// Not announced, and the mapper keeps its input device on its player: see FParkedSwitch2.
+		ControllerState.bIsConnected = false;
+		RefreshPlayerAssignments();
+		return false;
+	}
+
 	ControllerState.bIsConnected = false;
+	RecordEndedConnection(ControllerState.ConnectionId);
 
 	// Tell the mapper this physical device is gone.
 	IPlatformInputDeviceMapper& DeviceMapper = IPlatformInputDeviceMapper::Get();
@@ -1178,6 +1363,99 @@ bool FJoyShockInterface::OnDisconnectCallback(int32 InDeviceHandle, bool bInHasT
 	}
 	RefreshPlayerAssignments();
 	return true;
+}
+
+TArray<FJSL4UControllerInfo> FJoyShockInterface::GetParkedControllerInfos() const
+{
+	FScopeLock ContainerLock(&ControllerContainerLock);
+	TArray<FJSL4UControllerInfo> Infos;
+	for (const FParkedSwitch2& Parked : ParkedSwitch2s)
+	{
+		Infos.Add(Parked.Info);
+	}
+	return Infos;
+}
+
+bool FJoyShockInterface::IsParkedConnection(int64 ConnectionId) const
+{
+	FScopeLock ContainerLock(&ControllerContainerLock);
+	return ParkedSwitch2s.ContainsByPredicate([ConnectionId](const FParkedSwitch2& Parked)
+		{
+			return Parked.ConnectionId == ConnectionId;
+		});
+}
+
+bool FJoyShockInterface::HasConnectionJustEnded(int64 ConnectionId) const
+{
+	FScopeLock ContainerLock(&ControllerContainerLock);
+	const double* EndedAt = EndedConnections.Find(ConnectionId);
+	return EndedAt != nullptr && FPlatformTime::Seconds() - *EndedAt < EndedConnectionGraceSeconds;
+}
+
+void FJoyShockInterface::RecordEndedConnection(int64 ConnectionId)
+{
+	if (ConnectionId <= 0)
+	{
+		return;
+	}
+	FScopeLock ContainerLock(&ControllerContainerLock);
+	const double Now = FPlatformTime::Seconds();
+	for (auto It = EndedConnections.CreateIterator(); It; ++It)
+	{
+		if (Now - It.Value() >= EndedConnectionGraceSeconds)
+		{
+			It.RemoveCurrent();
+		}
+	}
+	EndedConnections.Add(ConnectionId, Now);
+}
+
+bool FJoyShockInterface::TryParkSwitch2(int32 DeviceHandle, FControllerState& State, bool bTimedOut)
+{
+	// Only the Pro Controller 2 has two transports to move between -- a Joy-Con 2 never appears on a cable --
+	// and only one whose identity was read can be recognised when it comes back.
+	if (State.Switch2Identity.IsEmpty() || State.HardwareDeviceIdentifier != FName(TEXT("Switch2ProController")))
+	{
+		return false;
+	}
+	// The editor letting a game have its Bluetooth controllers, or letting every controller go (R-040), is a
+	// real departure: the controller is going to another process, not to the cable.
+	if (Switch2Ble::IsYieldedToGame() || AreAllControllersReleased())
+	{
+		return false;
+	}
+
+	FParkedSwitch2& Parked = ParkedSwitch2s.AddDefaulted_GetRef();
+	Parked.Identity = State.Switch2Identity;
+	Parked.DeviceHandle = DeviceHandle;
+	Parked.ConnectionId = State.ConnectionId;
+	Parked.PlatformUser = State.PlatformUser;
+	Parked.InputDevice = State.InputDevice;
+	const int32* Slot = PlayerSlotByPrimary.Find(GetGroupPrimary(DeviceHandle));
+	Parked.PlayerSlot = Slot != nullptr ? *Slot : INDEX_NONE;
+	Parked.bTimedOut = bTimedOut;
+	Parked.ParkedAt = FPlatformTime::Seconds();
+	Parked.Info = State.LastInfo;
+	Parked.Info.bIsConnected = true;
+	ReserveUniqueHandle(ParkedSwitch2HandleKey(DeviceHandle), DeviceHandle);
+
+	UE_LOG(LogJoyShockLibrary, Log,
+		TEXT("Controller %d (%s) dropped; holding its connection for %.0f s in case it is moving between cable and Bluetooth."),
+		DeviceHandle, *State.DeviceName, Switch2HandoverGraceSeconds);
+	return true;
+}
+
+void FJoyShockInterface::RetireParkedSwitch2(const FParkedSwitch2& Parked)
+{
+	IPlatformInputDeviceMapper& DeviceMapper = IPlatformInputDeviceMapper::Get();
+	DeviceMapper.Internal_MapInputDeviceToUser(Parked.InputDevice, Parked.PlatformUser, EInputDeviceConnectionState::Disconnected);
+	FInputDeviceRegistry::RemoveDevice(Parked.InputDevice);
+	ReleaseUniqueHandle(ParkedSwitch2HandleKey(Parked.DeviceHandle));
+	RetiredThisTick.Add(TPair<int32, bool>(Parked.DeviceHandle, Parked.bTimedOut));
+	RecordEndedConnection(Parked.ConnectionId);
+
+	UE_LOG(LogJoyShockLibrary, Log,
+		TEXT("Controller %d did not come back on its other connection; it is disconnected."), Parked.DeviceHandle);
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -69,6 +69,62 @@ struct FPolledOutputState
 	int32 lastSentPlayerNumber;
 
 	bool bHomeLightCleared = false;
+
+	// Whether the previous call left the outputs to a game running beside the editor (see the top of
+	// send_pending_output_reports), so the call after it knows the game has gone.
+	bool bYieldedToGame = false;
+};
+
+// Paces a mode recovery that has to be repeated for as long as a controller keeps streaming the wrong report:
+// a bounded number of attempts per episode, a minimum gap between them. An episode starts with the first
+// wrong report and ends with the first right one, which re-arms the budget.
+//
+// Unbounded, these recoveries were a configuration command per input report -- on a Bluetooth stream, the
+// very thing that has dropped working controllers every time it was tried. A controller that ignores the
+// recovery is left streaming what it streams; one that needs it gets it a few times, spaced out.
+struct FModeRecoveryPacer
+{
+	FModeRecoveryPacer(int32 InIntervalMs, int32 InMaxAttempts, bool bInFirstAttemptAtOnce)
+		: IntervalMs(InIntervalMs), MaxAttempts(InMaxAttempts), bFirstAttemptAtOnce(bInFirstAttemptAtOnce)
+	{
+	}
+
+	// Called on every wrong report. True when this one should trigger an attempt.
+	bool ShouldAttempt()
+	{
+		const auto now = std::chrono::steady_clock::now();
+		if (!bInEpisode)
+		{
+			bInEpisode = true;
+			Attempts = 0;
+			LastAttemptTime = now;
+			if (!bFirstAttemptAtOnce)
+			{
+				return false;
+			}
+		}
+		else if (Attempts >= MaxAttempts
+			|| std::chrono::duration_cast<std::chrono::milliseconds>(now - LastAttemptTime).count() < IntervalMs)
+		{
+			return false;
+		}
+		LastAttemptTime = now;
+		++Attempts;
+		return true;
+	}
+
+	// Called on every right report.
+	void EndEpisode() { bInEpisode = false; bLoggedExhausted = false; }
+
+	bool IsExhausted() const { return bInEpisode && Attempts >= MaxAttempts; }
+
+	const int32 IntervalMs;
+	const int32 MaxAttempts;
+	const bool bFirstAttemptAtOnce;
+	int32 Attempts = 0;
+	bool bInEpisode = false;
+	bool bLoggedExhausted = false;
+	std::chrono::steady_clock::time_point LastAttemptTime;
 };
 
 // Moves this controller onto a different HID path and re-runs whatever init that transport needs.
@@ -124,6 +180,34 @@ static bool SwitchControllerTransport(JoyShock* jc, const FString& NewPath, bool
 // input packet.
 static void send_pending_output_reports(JoyShock* jc, FPolledOutputState& out)
 {
+	// An editor with a game running beside it writes nothing. Both processes read the same HID controllers,
+	// and each keeps its own player list, so both wrote player lights to the same controller: two halves of a
+	// pair joined in both processes at once and ended up showing two different players, depending on whose
+	// write landed last. The game is what is being played, so its lights and rumble are the ones that count --
+	// the same call the editor already makes for the Switch 2 Bluetooth link, from the same flag, which only
+	// the editor ever sets (see Switch2Ble::SetYieldedToGame).
+	if (Switch2Ble::IsYieldedToGame())
+	{
+		out.bYieldedToGame = true;
+		if (jc->is_switch2)
+		{
+			// Holding the USB command interface would keep the game from its LEDs and rumble.
+			jc->release_sw2_command_interface_if_idle();
+		}
+		return;
+	}
+	if (out.bYieldedToGame)
+	{
+		// The game has closed, and the controller still shows what the game last sent. Forget what this
+		// thread sent before it, so each output below goes out once more with the editor's own values. All of
+		// them are single write-only reports, which are safe to repeat on a live Bluetooth stream; the HOME
+		// light's clear is a subcommand and is deliberately not among them (see below).
+		out.bYieldedToGame = false;
+		out.lastSentPlayerNumber = INT32_MIN;
+		out.lastSentSmallRumble = 0xFF;
+		out.lastSentBigRumble = 0xFF;
+	}
+
 	// Player indicators are assigned from Unreal's actual player slot, not from HID enumeration order.
 	// The game thread stores the semantic one-based player number; this polling thread remains the sole
 	// writer to both Nintendo command pipes, keeping LED changes serialised with rumble.
@@ -347,6 +431,34 @@ static void send_pending_output_reports(JoyShock* jc, FPolledOutputState& out)
 // BEFORE calling ShutdownModule, and from any thread other than the game thread LoadModuleChecked then
 // fails its own check -- so a lookup here kills the editor on close, on a thread whose call stack says
 // nothing about why.
+// A Nintendo controller keeps the last player light it was sent, and it stays powered after the process lets
+// go of it -- on the cable, and a Switch 1 controller on Bluetooth, whose link belongs to Windows -- so closing
+// Unreal left a Pro Controller 2 showing player 1 until it was unplugged, as if something still owned it. One
+// last write-only report puts each controller back to how it looks attached to nothing but Windows: a Switch 1
+// controller on Bluetooth shows player 1 there, as when it is first connected (observed on the user's
+// Joy-Cons, 2026-11-07), so every released Joy-Con looks the same; anything else goes dark. Only shutdown
+// (cancel_thread) and the editor's release (R-040) call this: a controller that dropped is gone, and one
+// switching transport keeps its player. The stream is about to close, so this cannot disturb it.
+static void reset_player_lights_on_exit(JoyShock* jc)
+{
+	if (jc->controller_type != ControllerType::n_switch)
+	{
+		return;
+	}
+	// An editor closing while a game runs beside it: the controller is showing the game's player.
+	if (Switch2Ble::IsYieldedToGame())
+	{
+		return;
+	}
+
+	const bool bSwitch1OnBluetooth = !jc->is_switch2 && !jc->is_usb;
+	const unsigned char Mask = bSwitch1OnBluetooth ? 0x01 : 0x00;
+	const bool bSent = jc->is_switch2 ? jc->set_sw2_player_lights(Mask) : jc->set_switch_player_lights(Mask);
+	UE_LOG(LogJoyShockLibrary, Log, TEXT("Player lights of device %d reset on exit (%s): %s"),
+		jc->intHandle, bSwitch1OnBluetooth ? TEXT("player 1, as Windows shows it") : TEXT("off"),
+		bSent ? TEXT("sent") : TEXT("not sent"));
+}
+
 static void finish_polling_thread(JoyShock* jc, FJoyShockLibrary4UnrealModule& JSL4UModule,
 	bool bReceivedInput, bool lockedThread, int numTimeOuts)
 {
@@ -417,17 +529,23 @@ static void finish_polling_thread(JoyShock* jc, FJoyShockLibrary4UnrealModule& J
 	}
 
 	// disconnect this device
+	//
+	// Freed after the lock is released. The maps stopped pointing at it above, under that lock, so nothing
+	// can reach it any more -- and destroying a Bluetooth Switch 2 closes its GATT session and device
+	// synchronously, which under the lock froze every device getter on the game thread for as long as WinRT
+	// took.
 	const bool bDeletedHere = jc->delete_on_finish;
-	if (bDeletedHere)
-	{
-		UE_LOG(LogJoyShockLibrary, Log, TEXT("\t\tdeleting jc\n"));
-		delete jc;
-	}
 
 	if (lockedThread)
 	{
 		JSL4UModule._connectedLock.unlock();
 		// UJoyShockLibrary::ConnectedLock.Unlock();
+	}
+
+	if (bDeletedHere)
+	{
+		UE_LOG(LogJoyShockLibrary, Log, TEXT("\t\tdeleting jc\n"));
+		delete jc;
 	}
 
 	// notify that we disconnected this device, and say whether or not it was a timeout (if not a timeout, then an explicit disconnect)
@@ -501,6 +619,17 @@ void pollIndividualLoop(JoyShock *jc) {
 
 	FPolledOutputState out(jc);
 	auto lastSw2InitRetryTime = std::chrono::steady_clock::now();
+	// Retries of a USB init that held the command interface and still had commands fail. Bounded, unlike
+	// the wait for an interface someone else holds -- see the retry below.
+	int32 sw2InitRetriesWithInterface = 0;
+
+	// A Pro Controller 2 plugged in while on Bluetooth keeps streaming the Bluetooth report (0x09) over the
+	// cable when the USB init lands while it is still leaving the radio; the same init a moment later
+	// switches it to 0x05 at once. USB only, so no live-Bluetooth hazard: re-run every 0.75 s, ten times.
+	FModeRecoveryPacer sw2ReportModeRecovery(750, 10, false);
+	// A Switch 1 controller dropping to the simple 0x3F report over Bluetooth. That is a live Bluetooth
+	// stream, so three tries at most, two seconds apart -- the first at once, since motion stops with it.
+	FModeRecoveryPacer switchSimpleModeRecovery(2000, 3, true);
 
 	while (!jc->cancel_thread) {
 		// get input:
@@ -561,7 +690,36 @@ void pollIndividualLoop(JoyShock *jc) {
 
 		// 10 seconds of no signal means forget this controller
 		int reuseCounter = jc->reuse_counter;
-		int res = jc->read_input_report(buf, 64, 1000);
+		int res = 0;
+		const bool bReleasedByEditor = AreAllControllersReleased();
+		if (bReleasedByEditor)
+		{
+			// The editor's preference says another program gets the controllers. Same path as the game
+			// release below, for every transport: the ordinary teardown is what closes the handle or the link.
+			UE_LOG(LogJoyShockLibrary, Log,
+				TEXT("Controller %d (%s): controllers are switched off in the editor; releasing this one."),
+				jc->intHandle, *jc->name);
+			// Like a closed editor, a released controller should not keep showing a player it no longer has.
+			// Here and not after the loop: the disconnect branch below takes _connectedLock and keeps it into
+			// the teardown, and a HID write has no timeout.
+			reset_player_lights_on_exit(jc);
+			res = -1;
+		}
+		else if (jc->is_ble() && Switch2Ble::IsYieldedToGame())
+		{
+			// A game on this machine wants this controller, and it cannot even see it while this process holds
+			// the link. Read as a disconnect, so the controller goes through the ordinary teardown -- the game
+			// is told, the device is freed, and freeing it is what closes the link. Only a controller that is on
+			// the radio right now: one on its cable has is_ble() false and is handed over by the USB lease.
+			UE_LOG(LogJoyShockLibrary, Log,
+				TEXT("Controller %d (%s): a game on this PC is asking for the Bluetooth controllers; releasing this one to it."),
+				jc->intHandle, *jc->name);
+			res = -1;
+		}
+		else
+		{
+			res = jc->read_input_report(buf, 64, 1000);
+		}
 
 		// Shutdown asked this thread to stop while it was inside that read. Leave before the branches below
 		// can read the result as a disconnect: they take the connected lock, announce the controller as gone
@@ -582,7 +740,9 @@ void pollIndividualLoop(JoyShock *jc) {
 			const FString FallbackPath = jc->fallback_path;
 			jc->modifying_lock.Unlock();
 
-			if (!FallbackPath.IsEmpty())
+			// Released on purpose, not unplugged: falling back to the radio would only take the link the
+			// release is meant to let go of. The teardown unmaps both paths.
+			if (!FallbackPath.IsEmpty() && !bReleasedByEditor)
 			{
 				const FString AbandonedPath = jc->path;
 				// Lock-free for the same reason as the swap onto the cable above: the init inside can
@@ -624,6 +784,14 @@ void pollIndividualLoop(JoyShock *jc) {
 			JSL4UModule._connectedLock.lock();
 			// UJoyShockLibrary::_connectedLock.lock();
 			// UJoyShockLibrary::ConnectedLock.Lock();
+			// Shutdown may have claimed this device between the read returning and the lock being taken. It
+			// sets cancel_thread under this same lock, so seeing it here means the maps are already empty and
+			// the device is shutdown's to free: leave without touching either, or both sides free it.
+			if (jc->cancel_thread)
+			{
+				JSL4UModule._connectedLock.unlock();
+				break;
+			}
 			lockedThread = true;
 			const bool gettingReused = jc->reuse_counter != reuseCounter;
 			jc->delete_on_finish = true;
@@ -649,6 +817,12 @@ void pollIndividualLoop(JoyShock *jc) {
 				// just make sure we get this thing deleted before someone else tries to start a new connection
 				JSL4UModule._connectedLock.lock();
 				// UJoyShockLibrary::ConnectedLock.Lock();
+				// See the same check in the disconnect branch above.
+				if (jc->cancel_thread)
+				{
+					JSL4UModule._connectedLock.unlock();
+					break;
+				}
 				lockedThread = true;
 				const bool gettingReused = jc->reuse_counter != reuseCounter;
 				jc->delete_on_finish = true;
@@ -683,27 +857,97 @@ void pollIndividualLoop(JoyShock *jc) {
 				bLoggedFirstRead = true;
 			}
 
-			if (jc->is_switch2 && !jc->sw2_init_succeeded)
+			// The retry exists for the WinUSB lease the editor and its Standalone child pass between them, so
+			// it is USB only. Over Bluetooth there is no lease to wait for, and re-running the init there is
+			// the configuration exchange on a live stream that this file's other comments forbid -- a
+			// Bluetooth init that went wrong leaves a controller streaming on fixed stick centres, which
+			// beats one that stalls every two seconds and then drops.
+			//
+			// Waiting for an interface someone else holds costs one failed open, so it repeats for as long as
+			// it takes. An init that held the interface and still had commands fail is different: each try
+			// is a dozen bulk transfers on this thread, so it gets three.
+			if (jc->is_switch2 && !jc->is_ble() && !jc->sw2_init_succeeded
+				&& (jc->sw2_init_lacked_interface || sw2InitRetriesWithInterface < 3)
+				// Not while the editor is leaving the interface to a game (see init_switch2).
+				&& !Switch2Ble::IsYieldedToGame())
 			{
 				const auto now = std::chrono::steady_clock::now();
 				if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSw2InitRetryTime).count() >= 2000)
 				{
 					lastSw2InitRetryTime = now;
-					if (jc->is_ble() ? jc->init_switch2_bluetooth() : jc->init_switch2())
+					if (!jc->sw2_init_lacked_interface)
+					{
+						++sw2InitRetriesWithInterface;
+					}
+					if (jc->init_switch2())
 					{
 						UE_LOG(LogJoyShockLibrary, Log,
-							TEXT("SW2: acquired the released command interface and completed calibrated init."));
+							TEXT("SW2: the USB init went through on a retry."));
 					}
 				}
 			}
-			
-			// Detect Switch 1 simple HID report mode reset (0x3F) and trigger mode recovery
-			if (jc->controller_type == n_switch && !jc->is_switch2 && buf[0] == 0x3F)
+
+			// Over USB a Pro Controller 2 streams 0x05 and nothing else the parser takes, so any other report
+			// means the init did not take -- see sw2ReportModeRecovery above.
+			if (jc->is_switch2 && !jc->is_ble())
 			{
-				UE_LOG(LogJoyShockLibrary, Warning,
-					TEXT("Controller %d (%s): 0x3F mode reset detected; re-asserting full report mode."),
-					jc->intHandle, *jc->name);
-				jc->recover_switch_mode();
+				if (buf[0] == 0x05)
+				{
+					if (sw2ReportModeRecovery.bInEpisode && sw2ReportModeRecovery.Attempts > 0)
+					{
+						UE_LOG(LogJoyShockLibrary, Log,
+							TEXT("Controller %d (%s): now streaming report 0x05 after %d USB set-up(s)."),
+							jc->intHandle, *jc->name, sw2ReportModeRecovery.Attempts);
+					}
+					sw2ReportModeRecovery.EndEpisode();
+				}
+				else if (sw2ReportModeRecovery.ShouldAttempt())
+				{
+					UE_LOG(LogJoyShockLibrary, Log,
+						TEXT("Controller %d (%s): streaming report 0x%02X on USB instead of 0x05; running the USB set-up again (attempt %d/%d)."),
+						jc->intHandle, *jc->name, buf[0], sw2ReportModeRecovery.Attempts, sw2ReportModeRecovery.MaxAttempts);
+					jc->init_switch2();
+				}
+				else if (sw2ReportModeRecovery.IsExhausted() && !sw2ReportModeRecovery.bLoggedExhausted)
+				{
+					UE_LOG(LogJoyShockLibrary, Warning,
+						TEXT("Controller %d (%s): still streaming report 0x%02X on USB after %d set-ups; unplug it and plug it back in."),
+						jc->intHandle, *jc->name, buf[0], sw2ReportModeRecovery.MaxAttempts);
+					sw2ReportModeRecovery.bLoggedExhausted = true;
+				}
+			}
+
+			// A Switch 1 controller that dropped to the simple 0x3F report has lost its motion.
+			const bool bInSwitchSimpleMode = jc->controller_type == n_switch && !jc->is_switch2 && buf[0] == 0x3F;
+			if (bInSwitchSimpleMode)
+			{
+				if (switchSimpleModeRecovery.ShouldAttempt())
+				{
+					if (switchSimpleModeRecovery.Attempts == 1)
+					{
+						UE_LOG(LogJoyShockLibrary, Warning,
+							TEXT("Controller %d (%s): 0x3F mode reset detected; re-asserting full report mode."),
+							jc->intHandle, *jc->name);
+					}
+					else
+					{
+						UE_LOG(LogJoyShockLibrary, Log,
+							TEXT("Controller %d (%s): still in 0x3F; re-asserting full report mode (attempt %d/%d)."),
+							jc->intHandle, *jc->name, switchSimpleModeRecovery.Attempts, switchSimpleModeRecovery.MaxAttempts);
+					}
+					jc->recover_switch_mode();
+				}
+				else if (switchSimpleModeRecovery.IsExhausted() && !switchSimpleModeRecovery.bLoggedExhausted)
+				{
+					UE_LOG(LogJoyShockLibrary, Warning,
+						TEXT("Controller %d (%s): stayed in 0x3F after %d attempts; leaving it there rather than risk its Bluetooth link. Motion is unavailable until it reconnects."),
+						jc->intHandle, *jc->name, switchSimpleModeRecovery.MaxAttempts);
+					switchSimpleModeRecovery.bLoggedExhausted = true;
+				}
+			}
+			else if (jc->controller_type == n_switch && !jc->is_switch2)
+			{
+				switchSimpleModeRecovery.EndEpisode();
 			}
 
 			send_pending_output_reports(jc, out);
@@ -726,9 +970,10 @@ void pollIndividualLoop(JoyShock *jc) {
 					std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._callbackLock);
 					JSL4UModule.GetOnConnected().ExecuteIfBound(jc->intHandle);
 				}
-				// accumulate gyro
+				// Each sample covers the time since the previous report, the interval it was measured over;
+				// the game thread plays those stretches back frame by frame (FGyroTimeSlicer).
 				FIMUState imuState = jc->get_transformed_imu_state(jc->imu_state);
-				jc->push_cumulative_gyro(imuState.gyroX, imuState.gyroY, imuState.gyroZ);
+				jc->push_gyro_sample(jc->delta_time, imuState.gyroX, imuState.gyroY, imuState.gyroZ);
 				if (JSL4UModule.GetOnPoll().IsBound() || JSL4UModule.GetOnPollTouch().IsBound())
 				{
 					std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._callbackLock);
@@ -750,8 +995,11 @@ void pollIndividualLoop(JoyShock *jc) {
 				if (!hasIMU)
 				{
 					consecutiveReportsWithoutIMU++;
+					// Not in 0x3F: that report carries no IMU by design, and the mode recovery above already
+					// sends the 0x40 enable -- two mechanisms writing it at once is twice the traffic for
+					// nothing.
 					const bool bCanRepairIMU = jc->controller_type == ControllerType::n_switch
-						&& !jc->is_switch2;
+						&& !jc->is_switch2 && !bInSwitchSimpleMode;
 					if (bCanRepairIMU && imuRepairAttempts < 3)
 					{
 						if (bImuRepairToggleOffSent)
@@ -843,6 +1091,11 @@ void pollIndividualLoop(JoyShock *jc) {
 				// recovers for free on its next report.
 			}
 		}
+	}
+
+	if (jc->cancel_thread)
+	{
+		reset_player_lights_on_exit(jc);
 	}
 
 	finish_polling_thread(jc, JSL4UModule, bReceivedInput, lockedThread, numTimeOuts);

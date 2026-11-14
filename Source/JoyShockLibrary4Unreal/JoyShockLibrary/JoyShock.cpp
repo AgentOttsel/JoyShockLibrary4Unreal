@@ -249,37 +249,63 @@ JoyShock::~JoyShock() {
 	release_sw2_command_interface_if_idle();
 #endif
 }
-void JoyShock::push_cumulative_gyro(float gyroX, float gyroY, float gyroZ) {
+void JoyShock::push_gyro_sample(float sampleSeconds, float gyroX, float gyroY, float gyroZ) {
+	// The turn a sample stands for is its velocity over the time it covers, capped the way the slicer caps it:
+	// a report after a long silence measures the motion now, not the silence, and must not count it as turning.
+	const float coveredSeconds = FMath::Clamp(sampleSeconds, 0.f, FGyroTimeSlicer::MaxHoldSeconds);
 	modifying_lock.Lock();
-	if (num_cumulative_gyro_samples == 0) {
-		cumulative_gyro_x = 0.f;
-		cumulative_gyro_y = 0.f;
-		cumulative_gyro_z = 0.f;
-	}
-	cumulative_gyro_x += gyroX;
-	cumulative_gyro_y += gyroY;
-	cumulative_gyro_z += gyroZ;
-	num_cumulative_gyro_samples++;
+	gyro_slicer.Push(sampleSeconds, gyroX, gyroY, gyroZ);
+	cumulative_turn_x += gyroX * coveredSeconds;
+	cumulative_turn_y += gyroY * coveredSeconds;
+	cumulative_turn_z += gyroZ * coveredSeconds;
 	modifying_lock.Unlock();
 }
 void JoyShock::get_and_flush_cumulative_gyro(float& gyroX, float& gyroY, float& gyroZ) {
+	const double nowSeconds = std::chrono::duration<double>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+	gyroX = gyroY = gyroZ = 0.f;
 	modifying_lock.Lock();
-	if (num_cumulative_gyro_samples == 0) {
-		gyroX = cumulative_gyro_x;
-		gyroY = cumulative_gyro_y;
-		gyroZ = cumulative_gyro_z;
+	if (cumulative_flush_seconds < 0.0) {
+		// The first read: what turned since the controller connected belongs to no reader's interval, and
+		// spreading it over this one would be a jump. Start counting from here.
+		cumulative_turn_x = cumulative_turn_y = cumulative_turn_z = 0.f;
+		cumulative_flush_seconds = nowSeconds;
 	}
-	else {
-		gyroX = cumulative_gyro_x / num_cumulative_gyro_samples;
-		gyroY = cumulative_gyro_y / num_cumulative_gyro_samples;
-		gyroZ = cumulative_gyro_z / num_cumulative_gyro_samples;
-		num_cumulative_gyro_samples = 0;
-		// so that we don't return zeroes before we receive a new sample, store this for next time:
-		cumulative_gyro_x = gyroX;
-		cumulative_gyro_y = gyroY;
-		cumulative_gyro_z = gyroZ;
+	else if (nowSeconds > cumulative_flush_seconds) {
+		// Divided by the reader's own interval, not by how many samples arrived: a game multiplying this by
+		// its frame time gets back exactly the turn measured since its last read. A frame with no report is
+		// zero instead of a repeat of the last velocity, and the late reports pay that frame back when they
+		// arrive, so a quiet Bluetooth link neither drops turn nor drifts.
+		const float elapsed = static_cast<float>(nowSeconds - cumulative_flush_seconds);
+		gyroX = cumulative_turn_x / elapsed;
+		gyroY = cumulative_turn_y / elapsed;
+		gyroZ = cumulative_turn_z / elapsed;
+		cumulative_turn_x = cumulative_turn_y = cumulative_turn_z = 0.f;
+		cumulative_flush_seconds = nowSeconds;
 	}
+	modifying_lock.Unlock();
+	to_gyro_space(gyroX, gyroY, gyroZ);
+}
+void JoyShock::get_frame_gyro(uint64 engineFrame, float& gyroX, float& gyroY, float& gyroZ) {
+	modifying_lock.Lock();
+	if (engineFrame != gyro_slice_frame) {
+		gyro_slice_frame = engineFrame;
+		const double nowSeconds = std::chrono::duration<double>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
+		gyro_slicer.Slice(nowSeconds, frame_gyro_x, frame_gyro_y, frame_gyro_z);
+	}
+	gyroX = frame_gyro_x;
+	gyroY = frame_gyro_y;
+	gyroZ = frame_gyro_z;
+	modifying_lock.Unlock();
+}
+void JoyShock::get_frame_gyro_in_gyro_space(uint64 engineFrame, float& gyroX, float& gyroY, float& gyroZ) {
+	get_frame_gyro(engineFrame, gyroX, gyroY, gyroZ);
+	to_gyro_space(gyroX, gyroY, gyroZ);
+}
+void JoyShock::to_gyro_space(float& gyroX, float& gyroY, float& gyroZ) {
 	float gravX, gravY, gravZ;
+	modifying_lock.Lock();
 	motion.GetGravity(gravX, gravY, gravZ);
 	modifying_lock.Unlock();
 	switch (gyroSpace)
@@ -388,6 +414,8 @@ bool JoyShock::recover_switch_mode() {
 	uint8_t imuEnable = 0x01;
 	bool bImuOk = write_subcommand(0x40, &imuEnable, 1);
 
-	note_output_result(OutputFunctionMotionSensor, bModeOk && bImuOk);
+	// Deliberately not fed to note_output_result. A write that fails here is a controller mid-reset, not
+	// evidence that another application owns it, and reporting it as one raised "Steam is holding this
+	// controller" with nothing else running.
 	return bModeOk && bImuOk;
 }

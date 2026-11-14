@@ -1,5 +1,7 @@
 #include "Switch2Bluetooth.h"
 
+#include <atomic>
+
 // JSL_SWITCH2_BLUETOOTH is set by the module rules: it is 0 when no Windows SDK on the build machine
 // carries the C++/WinRT headers this transport is written against, which compiles Bluetooth out rather
 // than failing the build for everyone who only ever uses these controllers on a cable.
@@ -120,6 +122,10 @@ public:
 	// how the request is withdrawn, so it is held for the life of the connection rather than dropped after
 	// the call that made it. See the request in Connect.
 	BluetoothLEPreferredConnectionParametersRequest ConnectionParametersRequest{ nullptr };
+	// Held so it can be closed. An open service is held per process by Windows: one left open by a failed
+	// attempt made every later attempt -- in this process or another -- fail with a sharing violation and
+	// "access denied" on every characteristic, until the process that leaked it exited.
+	GattDeviceService Service{ nullptr };
 	GattCharacteristic InputCharacteristic{ nullptr };
 	GattCharacteristic CommandCharacteristic{ nullptr };
 	GattCharacteristic CommandResponseCharacteristic{ nullptr };
@@ -208,6 +214,10 @@ namespace
 	constexpr double SuppressAfterFailureSeconds = 3.0;
 	TMap<uint64, double> GSuppressedUntil;
 	TFunction<void()> GOnDiscovered;
+	// Discovery callbacks currently running on a radio thread. Clearing GOnDiscovered stops new ones but does
+	// not wait for one already past the lock, so Shutdown waits for this to drain before the module it calls
+	// into can go away.
+	std::atomic<int32> GDiscoveryCallbacksInFlight{ 0 };
 
 	// Connections are shared-owned, even though the interface hands out a raw pointer. The pointer is a
 	// handle: its holder (a controller's polling thread) may be blocked inside a read for a full second,
@@ -225,6 +235,56 @@ namespace
 
 	FCriticalSection GConnectionLock;
 	TArray<FConnectionPtr> GConnections;
+
+	// Releases everything a connection holds on the OS side. Shared by Disconnect and by every failed exit
+	// from Connect: a failed attempt that leaves the service or session open poisons the next attempt (see
+	// FSwitch2BleConnection::Service), so a half-built connection is closed exactly like a finished one.
+	void CloseConnectionResources(FSwitch2BleConnection& Connection)
+	{
+		try
+		{
+			// Handlers are removed first so no new notification is delivered. One already running keeps the
+			// connection alive through its weak reference, which is what makes this safe without waiting for it.
+			if (Connection.InputCharacteristic != nullptr && Connection.InputToken)
+			{
+				Connection.InputCharacteristic.ValueChanged(Connection.InputToken);
+			}
+			if (Connection.CommandResponseCharacteristic != nullptr && Connection.ResponseToken)
+			{
+				Connection.CommandResponseCharacteristic.ValueChanged(Connection.ResponseToken);
+			}
+			if (Connection.Device != nullptr && Connection.ConnectionStatusToken)
+			{
+				Connection.Device.ConnectionStatusChanged(Connection.ConnectionStatusToken);
+			}
+			if (Connection.ConnectionParametersRequest != nullptr)
+			{
+				// Withdraws the short-interval request, so the radio is not left holding bandwidth for a
+				// controller that has gone.
+				Connection.ConnectionParametersRequest.Close();
+				Connection.ConnectionParametersRequest = nullptr;
+			}
+			if (Connection.Service != nullptr)
+			{
+				Connection.Service.Close();
+				Connection.Service = nullptr;
+			}
+			if (Connection.Session != nullptr)
+			{
+				Connection.Session.MaintainConnection(false);
+				Connection.Session.Close();
+				Connection.Session = nullptr;
+			}
+			if (Connection.Device != nullptr)
+			{
+				Connection.Device.Close();
+				Connection.Device = nullptr;
+			}
+		}
+		catch (const winrt::hresult_error&)
+		{
+		}
+	}
 
 	// Turns a handle back into a reference, or null when the connection has already been disconnected --
 	// which is what makes a call on a stale handle a no-op instead of a use-after-free.
@@ -298,6 +358,11 @@ uint64 GetHostAddress()
 
 bool StartScan()
 {
+	if (IsYieldedToGame())
+	{
+		return false;
+	}
+
 	EnsureApartment();
 
 	FScopeLock Lock(&GScanLock);
@@ -350,8 +415,10 @@ bool StartScan()
 				}
 
 				TFunction<void()> Notify;
+				bool bOfferedBefore = false;
 				{
 					FScopeLock ScanLock(&GScanLock);
+					bOfferedBefore = GSuppressedUntil.Contains(Found.Address);
 					if (const double* SuppressedUntil = GSuppressedUntil.Find(Found.Address))
 					{
 						if (FPlatformTime::Seconds() < *SuppressedUntil)
@@ -362,17 +429,35 @@ bool StartScan()
 					GSuppressedUntil.Add(Found.Address, SuppressForever);
 					GDiscovered.Add(Found);
 					Notify = GOnDiscovered;
+					if (Notify)
+					{
+						// Counted under the same lock Shutdown clears the callback under, so Shutdown either
+						// sees this callback in flight or this callback sees no callback.
+						GDiscoveryCallbacksInFlight.fetch_add(1);
+					}
 				}
 
-				UE_LOG(LogSwitch2Bluetooth, Log,
-					TEXT("Switch 2 controller %012llX is advertising (product %04X, paired to %012llX)."),
-					Found.Address, Found.ProductId, Found.ReconnectMac);
+				// Verbose after the first offer: a controller turned down (paired elsewhere, or a failed
+				// connection) is offered again every few seconds, and the log needs to hear it once.
+				if (bOfferedBefore)
+				{
+					UE_LOG(LogSwitch2Bluetooth, Verbose,
+						TEXT("Switch 2 controller %012llX is advertising (product %04X, paired to %012llX)."),
+						Found.Address, Found.ProductId, Found.ReconnectMac);
+				}
+				else
+				{
+					UE_LOG(LogSwitch2Bluetooth, Log,
+						TEXT("Switch 2 controller %012llX is advertising (product %04X, paired to %012llX)."),
+						Found.Address, Found.ProductId, Found.ReconnectMac);
+				}
 
 				// Outside the lock: this runs an enumeration pass, and holding the scan lock across it
 				// would block every further advertisement for its duration.
 				if (Notify)
 				{
 					Notify();
+					GDiscoveryCallbacksInFlight.fetch_sub(1);
 				}
 				return;
 			}
@@ -432,6 +517,12 @@ void DrainDiscovered(TArray<FSwitch2BleAdvertisement>& OutDiscovered)
 	GDiscovered.Reset();
 }
 
+void SuppressFor(uint64 Address, double Seconds)
+{
+	FScopeLock Lock(&GScanLock);
+	GSuppressedUntil.Add(Address, FPlatformTime::Seconds() + Seconds);
+}
+
 FSwitch2BleConnection* Connect(uint64 Address)
 {
 	EnsureApartment();
@@ -440,18 +531,20 @@ FSwitch2BleConnection* Connect(uint64 Address)
 	// this session entirely -- but not immediately: it advertises many times a second, and retrying on
 	// every one of those would be a tight loop of failing connections. One that succeeds stays suppressed
 	// until it is disconnected, so a connected controller is not handed out a second time.
+	FConnectionPtr Connection = MakeShared<FSwitch2BleConnection, ESPMode::ThreadSafe>();
+	Connection->Address = Address;
+
+	// Every way out short of success closes what was opened, including the throws caught below.
 	bool bConnected = false;
 	ON_SCOPE_EXIT
 	{
 		if (!bConnected)
 		{
+			CloseConnectionResources(*Connection);
 			FScopeLock ScanLock(&GScanLock);
 			GSuppressedUntil.Add(Address, FPlatformTime::Seconds() + SuppressAfterFailureSeconds);
 		}
 	};
-
-	FConnectionPtr Connection = MakeShared<FSwitch2BleConnection, ESPMode::ThreadSafe>();
-	Connection->Address = Address;
 
 	try
 	{
@@ -462,10 +555,34 @@ FSwitch2BleConnection* Connect(uint64 Address)
 			return nullptr;
 		}
 
+		// The session first, holding the link up, and only then the service lookup. In the other order a
+		// controller woken by a button just after leaving its cable failed every attempt with "does not
+		// expose the Switch 2 service" in the Unity port of this code; with the session first, and the
+		// lookup given three tries, the same case connected.
+		Connection->Session = GattSession::FromDeviceIdAsync(Connection->Device.BluetoothDeviceId()).get();
+		if (Connection->Session != nullptr)
+		{
+			Connection->Session.MaintainConnection(true);
+		}
+
 		// Uncached: the controller was very likely connected to something else since Windows last looked,
-		// and a stale service list produces characteristics whose handles no longer resolve.
-		GattDeviceServicesResult ServicesResult =
-			Connection->Device.GetGattServicesForUuidAsync(ServiceUuid, BluetoothCacheMode::Uncached).get();
+		// and a stale service list produces characteristics whose handles no longer resolve. The last try
+		// takes the cache anyway, since an empty uncached answer can be a link still coming up rather than
+		// a device without the service. Which of these two changes made the Unity case connect is not known.
+		GattDeviceServicesResult ServicesResult{ nullptr };
+		for (int32 Attempt = 0; Attempt < 3; ++Attempt)
+		{
+			if (Attempt > 0)
+			{
+				FPlatformProcess::Sleep(0.5f);
+			}
+			const BluetoothCacheMode Mode = Attempt < 2 ? BluetoothCacheMode::Uncached : BluetoothCacheMode::Cached;
+			ServicesResult = Connection->Device.GetGattServicesForUuidAsync(ServiceUuid, Mode).get();
+			if (ServicesResult.Status() == GattCommunicationStatus::Success && ServicesResult.Services().Size() > 0)
+			{
+				break;
+			}
+		}
 		if (ServicesResult.Status() != GattCommunicationStatus::Success || ServicesResult.Services().Size() == 0)
 		{
 			UE_LOG(LogSwitch2Bluetooth, Warning,
@@ -473,13 +590,8 @@ FSwitch2BleConnection* Connect(uint64 Address)
 			return nullptr;
 		}
 
-		GattDeviceService Service = ServicesResult.Services().GetAt(0);
-
-		Connection->Session = GattSession::FromDeviceIdAsync(Connection->Device.BluetoothDeviceId()).get();
-		if (Connection->Session != nullptr)
-		{
-			Connection->Session.MaintainConnection(true);
-		}
+		Connection->Service = ServicesResult.Services().GetAt(0);
+		const GattDeviceService& Service = Connection->Service;
 
 		// Ask for the shortest connection interval the radio will give us. This is what decides the polling
 		// rate: a BLE peripheral can only speak once per connection interval, and Windows' default for a
@@ -677,43 +789,7 @@ void Disconnect(FSwitch2BleConnection* Connection)
 	// Before the teardown below, so anyone blocked in a read or waiting on a command wakes up and stops
 	// using this connection now rather than at the end of their timeout.
 	Owned->MarkDisconnected();
-
-	try
-	{
-		// Handlers are removed first so no new notification is delivered. One already running keeps the
-		// connection alive through its weak reference, which is what makes this safe without waiting for it.
-		if (Owned->InputCharacteristic != nullptr && Owned->InputToken)
-		{
-			Owned->InputCharacteristic.ValueChanged(Owned->InputToken);
-		}
-		if (Owned->CommandResponseCharacteristic != nullptr && Owned->ResponseToken)
-		{
-			Owned->CommandResponseCharacteristic.ValueChanged(Owned->ResponseToken);
-		}
-		if (Owned->Device != nullptr && Owned->ConnectionStatusToken)
-		{
-			Owned->Device.ConnectionStatusChanged(Owned->ConnectionStatusToken);
-		}
-		if (Owned->ConnectionParametersRequest != nullptr)
-		{
-			// Withdraws the short-interval request, so the radio is not left holding bandwidth for a
-			// controller that has gone.
-			Owned->ConnectionParametersRequest.Close();
-			Owned->ConnectionParametersRequest = nullptr;
-		}
-		if (Owned->Session != nullptr)
-		{
-			Owned->Session.MaintainConnection(false);
-			Owned->Session.Close();
-		}
-		if (Owned->Device != nullptr)
-		{
-			Owned->Device.Close();
-		}
-	}
-	catch (const winrt::hresult_error&)
-	{
-	}
+	CloseConnectionResources(*Owned);
 
 	// Owned goes out of scope here. The memory is freed at that point only if nothing else is still inside
 	// this connection; a polling thread mid-read holds the last reference and frees it when it returns.
@@ -783,16 +859,29 @@ bool SendCommand(FSwitch2BleConnection* Connection, uint8 CommandId, uint8 Subco
 	// acknowledgement alone does not answer it. Anything else on the channel -- the ack that precedes a
 	// memory read's data, a late answer to a command that already gave up -- is discarded and the wait
 	// resumes on what is left of the deadline.
+	//
+	// Except a refusal: an answer to this command with any other status is the controller saying no, and
+	// waiting on after it only spends the rest of the timeout learning nothing. The init expects refusals
+	// (it covers several controller shapes), so each of them used to cost a full second.
 	const double Deadline = FPlatformTime::Seconds() + FMath::Max(TimeoutMs, 0) / 1000.0;
 	for (;;)
 	{
 		{
 			FScopeLock ResponseLock(&Pinned->ResponseLock);
+			bool bRefused = false;
 			for (int32 Index = 0; Index < Pinned->ResponseQueue.Num(); ++Index)
 			{
 				const TArray<uint8>& Candidate = Pinned->ResponseQueue[Index];
-				if (Candidate.Num() < FMath::Max(8, MinResponseBytes)
-					|| Candidate[0] != CommandId || Candidate[1] != 0x01)
+				if (Candidate.Num() < 2 || Candidate[0] != CommandId)
+				{
+					continue;
+				}
+				if (Candidate[1] != 0x01)
+				{
+					bRefused = true;
+					continue;
+				}
+				if (Candidate.Num() < FMath::Max(8, MinResponseBytes))
 				{
 					continue;
 				}
@@ -805,6 +894,12 @@ bool SendCommand(FSwitch2BleConnection* Connection, uint8 CommandId, uint8 Subco
 				return true;
 			}
 			Pinned->ResponseQueue.Reset();
+			if (bRefused)
+			{
+				UE_LOG(LogSwitch2Bluetooth, Verbose, TEXT("Command %02X:%02X refused by the controller."),
+					CommandId, SubcommandId);
+				return false;
+			}
 		}
 
 		// Checked after the drain, so an answer that arrived just before the link dropped is still taken.
@@ -971,6 +1066,13 @@ void Shutdown()
 		FScopeLock ScanLock(&GScanLock);
 		GOnDiscovered = nullptr;
 	}
+	// And one already running finishes before this returns. It only queues an enumeration request, which
+	// returns at once during shutdown, so the wait is short -- but without it the callback could still be
+	// inside the module when the module is destroyed.
+	while (GDiscoveryCallbacksInFlight.load() > 0)
+	{
+		FPlatformProcess::Sleep(0.001f);
+	}
 
 	TArray<FConnectionPtr> Remaining;
 	{
@@ -996,6 +1098,7 @@ namespace Switch2Ble
 	void StopScan() {}
 	void SetDiscoveryCallback(TFunction<void()>) {}
 	void DrainDiscovered(TArray<FSwitch2BleAdvertisement>&) {}
+void SuppressFor(uint64, double) {}
 	FSwitch2BleConnection* Connect(uint64) { return nullptr; }
 	void Disconnect(FSwitch2BleConnection*) {}
 	bool IsConnected(const FSwitch2BleConnection*) { return false; }
@@ -1008,3 +1111,15 @@ namespace Switch2Ble
 }
 
 #endif // PLATFORM_WINDOWS && JSL_SWITCH2_BLUETOOTH
+
+// The same on every platform: it is a flag, not a radio operation, and the polling loop reads it everywhere.
+namespace
+{
+	std::atomic<bool> GYieldedToGame{ false };
+}
+
+namespace Switch2Ble
+{
+	void SetYieldedToGame(bool bYielded) { GYieldedToGame.store(bYielded); }
+	bool IsYieldedToGame() { return GYieldedToGame.load(); }
+}

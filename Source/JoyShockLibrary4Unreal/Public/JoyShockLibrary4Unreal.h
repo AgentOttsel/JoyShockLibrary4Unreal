@@ -31,6 +31,11 @@ DECLARE_MULTICAST_DELEGATE_ThreeParams(FJSL4UJoyConPairingChangedEvent,
 // the observable signature of another application (Steam Input, typically) holding the controller.
 DECLARE_MULTICAST_DELEGATE_TwoParams(FJSL4UDeviceFunctionBlockedEvent,
 	int32 /*DeviceId*/, EJSL4UControllerFunction /*Function*/);
+// Fired on the game thread when a controller that moved between cable and Bluetooth is carried on under a
+// new library handle, with its Connection Id and player unchanged. No connect or disconnect is raised for
+// it; this only tells whoever keys anything by handle that the old one now means the new one.
+DECLARE_MULTICAST_DELEGATE_TwoParams(FJSL4UDeviceHandedOverEvent,
+	int32 /*OldDeviceId*/, int32 /*NewDeviceId*/);
 
 
 #define JoyShockLockedBindLambda(Module, Delegate, Lambda) { \
@@ -88,6 +93,7 @@ public:
 	FORCEINLINE FJSL4UDeviceDisconnectedEvent& GetOnDeviceDisconnected() { return OnDeviceDisconnected; }
 	FORCEINLINE FJSL4UJoyConPairingChangedEvent& GetOnJoyConPairingChanged() { return OnJoyConPairingChanged; }
 	FORCEINLINE FJSL4UDeviceFunctionBlockedEvent& GetOnDeviceFunctionBlocked() { return OnDeviceFunctionBlocked; }
+	FORCEINLINE FJSL4UDeviceHandedOverEvent& GetOnDeviceHandedOver() { return OnDeviceHandedOver; }
 
 	// The live input-device interface owns the controller state, player-slot assignment and Joy-Con joining.
 	// It registers itself here on creation so the Blueprint pairing API can reach it. May be null before the
@@ -109,6 +115,7 @@ protected:
 	FJSL4UDeviceDisconnectedEvent OnDeviceDisconnected;
 	FJSL4UJoyConPairingChangedEvent OnJoyConPairingChanged;
 	FJSL4UDeviceFunctionBlockedEvent OnDeviceFunctionBlocked;
+	FJSL4UDeviceHandedOverEvent OnDeviceHandedOver;
 
 #if PLATFORM_WINDOWS
 	FWindowsDeviceChangeMessageHandler WindowsDeviceChangeMessageHandler;

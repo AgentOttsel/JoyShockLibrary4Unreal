@@ -303,8 +303,15 @@ public:
 	// 0x08000: N
 	// 0x10000: home / PS
 	// 0x20000: capture / touchpad-click
-	// 0x40000: SL
-	// 0x80000: SR
+	// 0x40000: mic (DualSense)
+	// 0x80000: SL
+	// 0x100000: SR
+	// 0x200000: FnL (DualSense Edge)
+	// 0x400000: FnR (DualSense Edge)
+	// 0x800000: C (Switch 2 GameChat)
+	// 0x1000000: GL (Switch 2 rear grip)
+	// 0x2000000: GR (Switch 2 rear grip)
+	// The JSMASK_* defines in JoyShockTypes.h are the authority; keep this list in step with them.
 	// These are the best way to get all the buttons/triggers/sticks, gyro/accelerometer (IMU), orientation/acceleration/gravity (Motion), or touchpad
 	static FJoyShockState GetSimpleStateForHandle(int32 deviceId);
 
@@ -357,11 +364,15 @@ public:
 		meta = (DisplayName = "JSL4U Get Right Stick", ToolTip = "Returns one controller's current right-stick position, from -1 to 1. Reads that device directly, so it answers before the controller belongs to any player -- for assignment screens and diagnostics. For gameplay, bind Enhanced Input instead."))
 	static FVector2D JSL4UGetRightStick(int64 ConnectionId);
 
-	// get accumulated average gyro since this function was last called or last flushed values
+	// The average gyro velocity, in degrees per second and in the controller's gyro space, over the time since
+	// the previous call, then cleared: every sample counts in exactly one call, however often it is called.
 	static void GetAndFlushAccumulatedGyroForHandle(int32 deviceId, float& gyroX, float& gyroY, float& gyroZ);
 
+	// The same per-frame gyro in the controller's own frame, for Unreal's motion input.
+	static void GetFrameGyroForHandle(int32 deviceId, float& gyroX, float& gyroY, float& gyroZ);
+
 	UFUNCTION(BlueprintCallable, Category = "JoyShock Library|Motion",
-		meta = (DisplayName = "JSL4U Get And Clear Accumulated Gyro", ToolTip = "Returns the accumulated gyro rotation since the previous call, then clears the accumulator. Values use Unreal axes."))
+		meta = (DisplayName = "JSL4U Get And Clear Accumulated Gyro", ToolTip = "Returns the gyro's average angular velocity, in degrees per second, since the previous call, then clears it. Multiply by the time since your last call for the rotation in degrees: every report counts in exactly one call, however often you call it, so it suits mouse-like aiming. Call it from one place per controller. Values use Unreal axes."))
 	static FVector JSL4UGetAndClearAccumulatedGyro(int64 ConnectionId);
 
 	// Sets how gyro input is transformed. GetAndFlushAccumulatedGyroForHandle, GetRawIMUStateForHandle and the
@@ -404,6 +415,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "JoyShock Library|Diagnostics",
 		meta = (DisplayName = "JSL4U Get Seconds Since Last Report", ToolTip = "Returns seconds since the controller last delivered an input report. A steadily increasing value indicates the device has stopped reporting."))
 	static float JSL4UGetSecondsSinceLastReport(int64 ConnectionId);
+
+	// Input reports the controller actually delivered over the last second, counted as they arrive, so it
+	// compares a cable with Bluetooth, or a good Bluetooth link with a crowded one. Get Poll Interval is what
+	// the controller is supposed to do; this is what it does.
+	UFUNCTION(BlueprintPure, Category = "JoyShock Library|Diagnostics",
+		meta = (DisplayName = "JSL4U Get Reports Per Second", ToolTip = "Returns how many input reports this controller delivered per second, measured over the last second as they arrive, independent of frame rate. Zero for a controller that has stopped reporting."))
+	static float JSL4UGetReportsPerSecond(int64 ConnectionId);
 
 	static float GetStickStepForHandle(int32 deviceId);
 
@@ -493,6 +511,10 @@ public:
 
 	// what kind of controller is this?
 	static int32 GetControllerTypeForHandle(int32 deviceId);
+
+	// Names one physical Switch 2 controller the same way over the cable and over Bluetooth (see
+	// JoyShock::sw2_info_identity). Empty when it is not known, which matches nothing.
+	static FString GetSwitch2IdentityForHandle(int32 deviceId);
 
 	// The mouse sensor's movement since the engine's input axes were last given it, in sensor counts. Not a
 	// Blueprint node: this is the feed behind the JoyShock Mouse axis keys, and it keeps its own baseline

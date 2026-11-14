@@ -95,6 +95,8 @@ public class JoyShockLibrary4Unreal : ModuleRules
 			{
 				"ApplicationCore",
 				"CoreUObject",
+				// UDeveloperSettings, for the plugin's page in Editor Preferences (JoyShockEditorSettings.h).
+				"DeveloperSettings",
 				"Engine",
 				// "HIDUE",
 				"InputCore",

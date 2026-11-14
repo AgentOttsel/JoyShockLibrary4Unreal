@@ -96,6 +96,27 @@ static FString Sw2GetCompositeParentIdForInterfacePath(const FString& InterfaceP
 }
 #endif
 
+// Whether a parsed stick calibration describes a stick. A block that is blank or erased parses into numbers
+// perfectly happily -- an erased one into a centre of 4095, which then reads as a stick jammed to one side,
+// and a blank one into a zero range that would divide by zero -- so what comes back is judged as a
+// description of a stick, not merely for whether the read succeeded. Shared by the USB and Bluetooth inits,
+// which once disagreed: only Bluetooth checked, so the same controller could centre on one transport and not
+// the other.
+//
+// A 12-bit axis: the centre sits near the middle of the scale, and each direction of travel is some real
+// distance without spanning the whole of it. One test over both axes, because a calibration is only usable
+// if all four directions are.
+static bool Sw2StickCalIsPlausible(const uint16_t* calX, const uint16_t* calY)
+{
+	auto AxisIsPlausible = [](const uint16_t* cal)
+	{
+		return cal[1] >= 1000 && cal[1] <= 3000
+			&& cal[2] > cal[1] + 200 && cal[2] - cal[1] <= 2048
+			&& cal[0] + 200 < cal[1] && cal[1] - cal[0] <= 2048;
+	};
+	return AxisIsPlausible(calX) && AxisIsPlausible(calY);
+}
+
 bool JoyShock::sw2_open_winusb() {
 #if PLATFORM_WINDOWS
 	// Device interface GUID exposed by the controller's own MS OS descriptor for its WinUSB interface
@@ -312,6 +333,30 @@ bool JoyShock::read_sw2_ble_memory(uint32 address, int32 length, TArray<uint8>& 
 		intHandle, address, length, *Failure);
 	return false;
 }
+void JoyShock::set_sw2_info_identity(const uint8* InfoBlock)
+{
+	// Everything before the colours at 0x19: serial and ids. A read that came back erased or empty says
+	// nothing about which controller this is, and two controllers would match on it, so it is not kept.
+	bool bAllSame = true;
+	for (int32 i = 1; i < 0x19; ++i)
+	{
+		bAllSame &= InfoBlock[i] == InfoBlock[0];
+	}
+	if (bAllSame)
+	{
+		return;
+	}
+
+	FString Identity;
+	for (int32 i = 0; i < 0x19; ++i)
+	{
+		Identity += FString::Printf(TEXT("%02x"), InfoBlock[i]);
+	}
+	modifying_lock.Lock();
+	sw2_info_identity = Identity;
+	modifying_lock.Unlock();
+}
+
 bool JoyShock::init_switch2_bluetooth() {
 	if (ble_connection == nullptr)
 	{
@@ -388,6 +433,7 @@ bool JoyShock::init_switch2_bluetooth() {
 		left_grip_colour = (Block[0x1F] << 16) | (Block[0x20] << 8) | Block[0x21];
 		right_grip_colour = (Block[0x22] << 16) | (Block[0x23] << 8) | Block[0x24];
 		UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 colours: body %06x, buttons %06x\n"), body_colour, button_colour);
+		set_sw2_info_identity(Block.GetData());
 	}
 
 	// Three packed 12-bit pairs: the centre, then the distance to each end of travel. Same layout the USB
@@ -430,16 +476,7 @@ bool JoyShock::init_switch2_bluetooth() {
 		const uint16_t candidateX[3] = { static_cast<uint16_t>(cx - rxb), cx, static_cast<uint16_t>(cx + rxa) };
 		const uint16_t candidateY[3] = { static_cast<uint16_t>(cy - ryb), cy, static_cast<uint16_t>(cy + rya) };
 
-		// A 12-bit axis: the centre sits near the middle of the scale, and each direction of travel is some
-		// real distance without spanning the whole of it. Written as one test over both axes because a
-		// calibration is only usable if all four directions are.
-		auto AxisIsPlausible = [](const uint16_t* cal)
-		{
-			return cal[1] >= 1000 && cal[1] <= 3000
-				&& cal[2] > cal[1] + 200 && cal[2] - cal[1] <= 2048
-				&& cal[0] + 200 < cal[1] && cal[1] - cal[0] <= 2048;
-		};
-		if (!AxisIsPlausible(candidateX) || !AxisIsPlausible(candidateY))
+		if (!Sw2StickCalIsPlausible(candidateX, candidateY))
 		{
 			UE_LOG(LogJoyShockLibrary, Log,
 				TEXT("SW2 %s stick cal (%s) at 0x%06X describes no stick "
@@ -508,6 +545,20 @@ bool JoyShock::init_switch2() {
 	// Command format: [command_id] 0x91 0x00 [subcommand_id] 0x00 [data_len] 0x00 0x00 [data...].
 	// (Over Bluetooth LE byte 2 is 0x01 instead; sending that over USB makes it search for a BT host.)
 #if PLATFORM_WINDOWS
+	// An editor with a game running beside it leaves the command interface to the game. Only one process can
+	// hold it, both see the cable arrive, and the editor won by a few milliseconds every time -- leaving the
+	// game, the one being played, without stick calibration or identity for the two seconds until the editor
+	// let go: long enough for the fixed-centre fallback to walk a character off on its own, and for a Pro
+	// Controller 2 coming off Bluetooth to be announced as a new controller. The polling thread's retry picks
+	// the init up once the game has closed.
+	if (Switch2Ble::IsYieldedToGame())
+	{
+		sw2_init_succeeded = false;
+		sw2_init_lacked_interface = true;
+		this->initialised = true;
+		return false;
+	}
+
 	UE_LOG(LogJoyShockLibrary, Log, TEXT("Running Switch 2 (WinUSB) init sequence...\n"));
 
 	if (!sw2_open_winusb())
@@ -521,9 +572,11 @@ bool JoyShock::init_switch2() {
 			sw2_init_failure_logged = true;
 		}
 		sw2_init_succeeded = false;
+		sw2_init_lacked_interface = true;
 		this->initialised = true;
 		return false;
 	}
+	sw2_init_lacked_interface = false;
 
 	WINUSB_INTERFACE_HANDLE usbHandle = static_cast<WINUSB_INTERFACE_HANDLE>(sw2_winusb_handle);
 	const UCHAR outPipe = sw2_out_pipe;
@@ -581,25 +634,56 @@ bool JoyShock::init_switch2() {
 		// Stick calibration is nine bytes wherever it is stored: packed 12-bit pairs holding
 		// [centerX,centerY][rangeX_a,rangeY_a][rangeX_b,rangeY_b]. Takes the nine bytes rather than a block
 		// base, because the factory copy and the user copy sit at different offsets within their blocks.
-		auto ParseStickCal = [&Unpack12](const unsigned char* nine, uint16_t* calX, uint16_t* calY)
+		//
+		// Parsed aside and committed only if it passes Sw2StickCalIsPlausible, so a rejected block leaves the
+		// slot untouched -- which the parser reads as "no calibration, use the fixed centre" -- rather than a
+		// stick held to one side for the whole connection.
+		auto ParseStickCal = [&Unpack12](const unsigned char* nine, uint16_t* calX, uint16_t* calY,
+			const TCHAR* label, const TCHAR* source)
 		{
 			uint16_t cx, cy, rxa, rya, rxb, ryb;
 			Unpack12(nine, cx, cy);
 			Unpack12(nine + 3, rxa, rya);
 			Unpack12(nine + 6, rxb, ryb);
-			calX[1] = cx; calX[2] = cx + rxa; calX[0] = cx - rxb;
-			calY[1] = cy; calY[2] = cy + rya; calY[0] = cy - ryb;
+			const uint16_t candidateX[3] = { static_cast<uint16_t>(cx - rxb), cx, static_cast<uint16_t>(cx + rxa) };
+			const uint16_t candidateY[3] = { static_cast<uint16_t>(cy - ryb), cy, static_cast<uint16_t>(cy + rya) };
+			if (!Sw2StickCalIsPlausible(candidateX, candidateY))
+			{
+				UE_LOG(LogJoyShockLibrary, Log,
+					TEXT("SW2 %s stick cal (%s) describes no stick (centre (%d, %d), min (%d, %d), max (%d, %d)); ignored.\n"),
+					label, source, candidateX[1], candidateY[1], candidateX[0], candidateY[0], candidateX[2], candidateY[2]);
+				return false;
+			}
+			calX[0] = candidateX[0]; calX[1] = candidateX[1]; calX[2] = candidateX[2];
+			calY[0] = candidateY[0]; calY[1] = candidateY[1]; calY[2] = candidateY[2];
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 %s stick cal (%s): centre (%d, %d), min (%d, %d), max (%d, %d)\n"),
+				label, source, calX[1], calY[1], calX[0], calY[0], calX[2], calY[2]);
+			return true;
 		};
 
 		unsigned char spi[64];
 		// Block 0x013000: serial, ids, then body/buttons/left-grip/right-grip RGB colours at offset 0x19.
-		if (SpiRead(0x013000, spi))
+		//
+		// Read twice if need be. With the controller already on the cable when a Standalone started beside the
+		// editor (2026-11-06, reproduced on purpose), this first transfer on the freshly opened interface
+		// failed while every read after it in the same init succeeded -- consistent with a reply left in the
+		// pipe by its previous owner. Losing this block costs more than colours: without the serial the
+		// controller cannot be recognised, so its first trip between cable and Bluetooth hands its player to
+		// whichever controller arrives next and brings it back as a new one.
+		bool bReadInfoBlock = SpiRead(0x013000, spi);
+		if (!bReadInfoBlock)
+		{
+			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2: the info block read failed on the first try; retrying once.\n"));
+			bReadInfoBlock = SpiRead(0x013000, spi);
+		}
+		if (bReadInfoBlock)
 		{
 			body_colour = (spi[0x19] << 16) | (spi[0x1A] << 8) | spi[0x1B];
 			button_colour = (spi[0x1C] << 16) | (spi[0x1D] << 8) | spi[0x1E];
 			left_grip_colour = (spi[0x1F] << 16) | (spi[0x20] << 8) | spi[0x21];
 			right_grip_colour = (spi[0x22] << 16) | (spi[0x23] << 8) | spi[0x24];
 			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 colours: body %06x, buttons %06x\n"), body_colour, button_colour);
+			set_sw2_info_identity(spi);
 		}
 
 		// The player's own calibration, written by the console's stick-correction screen, wins over the
@@ -614,39 +698,32 @@ bool JoyShock::init_switch2() {
 			return !(nine[0] == 0xFF && nine[1] == 0xFF && nine[2] == 0xFF);
 		};
 
-		if (bReadUserCal && UserCalWritten(userCal + 0x02))
+		// A user block that is written but describes no stick falls through to the factory copy, as over
+		// Bluetooth.
+		if (!(bReadUserCal && UserCalWritten(userCal + 0x02)
+				&& ParseStickCal(userCal + 0x02, stick_cal_x_l, stick_cal_y_l, TEXT("left"), TEXT("user")))
+			&& SpiRead(0x013080, spi))
 		{
-			ParseStickCal(userCal + 0x02, stick_cal_x_l, stick_cal_y_l);
-			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 left stick cal (user): centre (%d, %d), min (%d, %d), max (%d, %d)\n"),
-				stick_cal_x_l[1], stick_cal_y_l[1], stick_cal_x_l[0], stick_cal_y_l[0], stick_cal_x_l[2], stick_cal_y_l[2]);
-		}
-		else if (SpiRead(0x013080, spi))
-		{
-			ParseStickCal(spi + 0x28, stick_cal_x_l, stick_cal_y_l);
-			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 left stick cal (factory): centre (%d, %d), min (%d, %d), max (%d, %d)\n"),
-				stick_cal_x_l[1], stick_cal_y_l[1], stick_cal_x_l[0], stick_cal_y_l[0], stick_cal_x_l[2], stick_cal_y_l[2]);
+			ParseStickCal(spi + 0x28, stick_cal_x_l, stick_cal_y_l, TEXT("left"), TEXT("factory"));
 		}
 
-		if (bReadUserCal && UserCalWritten(userCal + 0x22))
+		if (!(bReadUserCal && UserCalWritten(userCal + 0x22)
+				&& ParseStickCal(userCal + 0x22, stick_cal_x_r, stick_cal_y_r, TEXT("right"), TEXT("user")))
+			&& SpiRead(0x0130C0, spi))
 		{
-			ParseStickCal(userCal + 0x22, stick_cal_x_r, stick_cal_y_r);
-			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 right stick cal (user): centre (%d, %d), min (%d, %d), max (%d, %d)\n"),
-				stick_cal_x_r[1], stick_cal_y_r[1], stick_cal_x_r[0], stick_cal_y_r[0], stick_cal_x_r[2], stick_cal_y_r[2]);
-		}
-		else if (SpiRead(0x0130C0, spi))
-		{
-			ParseStickCal(spi + 0x28, stick_cal_x_r, stick_cal_y_r);
-			UE_LOG(LogJoyShockLibrary, Log, TEXT("SW2 right stick cal (factory): centre (%d, %d), min (%d, %d), max (%d, %d)\n"),
-				stick_cal_x_r[1], stick_cal_y_r[1], stick_cal_x_r[0], stick_cal_y_r[0], stick_cal_x_r[2], stick_cal_y_r[2]);
+			ParseStickCal(spi + 0x28, stick_cal_x_r, stick_cal_y_r, TEXT("right"), TEXT("factory"));
 		}
 
 		struct Sw2InitCmd { unsigned char cmd; unsigned char subcmd; int dataLen; unsigned char data[20]; };
 		const Sw2InitCmd cmds[] = {
 			{ 0x07, 0x01, 0,  {} },
-			{ 0x0c, 0x02, 4,  { 0x27, 0x00, 0x00, 0x00 } },              // FEATSEL
+			// FEATSEL: the Steam capture's 0x27 plus the magnetometer (0x80), which Bluetooth already asks
+			// for. Only that one bit is added: asking for every feature turns on report fields the parser
+			// does not expect, read as stuck triggers (see the Bluetooth init).
+			{ 0x0c, 0x02, 4,  { 0xA7, 0x00, 0x00, 0x00 } },
 			{ 0x11, 0x01, 0,  {} },
 			{ 0x0a, 0x08, 20, { 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x35, 0x00, 0x46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } },
-			{ 0x0c, 0x04, 4,  { 0x27, 0x00, 0x00, 0x00 } },
+			{ 0x0c, 0x04, 4,  { 0xA7, 0x00, 0x00, 0x00 } },
 			{ 0x01, 0x0c, 0,  {} },
 			{ 0x01, 0x01, 0,  {} },
 			{ 0x08, 0x02, 4,  { 0x01, 0x00, 0x00, 0x00 } },
@@ -689,7 +766,13 @@ bool JoyShock::init_switch2() {
 			}
 			else
 			{
+				// A healthy USB init has every command acknowledged. A missing ack means the controller was
+				// still busy -- typically leaving a Bluetooth link the cable arrived during -- and dropped the
+				// command, and the ones dropped first include the feature enables, so it streams with no
+				// motion and no player light. Counting it as a failure lets the poll loop's bounded USB retry
+				// run the init again once the controller has settled.
 				UE_LOG(LogJoyShockLibrary, Log, TEXT("  SW2 cmd %02x:%02x -> sent (%u bytes), no ack\n"), c.cmd, c.subcmd, written);
+				bSuccess = false;
 			}
 		}
 		sw2_last_command_time = std::chrono::steady_clock::now();

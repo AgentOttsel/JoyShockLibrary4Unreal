@@ -4,6 +4,7 @@
 
 #include "JoyShockLibrary4Unreal.h"
 #include "JoyShockBlueprintLibrary.h"
+#include "JoyShockInterface.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
@@ -46,6 +47,15 @@ void UJoyShockSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		LastControllerInfoByDeviceId.Remove(DeviceId);
 	});
 
+	// A controller that moved between cable and Bluetooth goes on under a new handle and raises no event a
+	// game sees. The cache is keyed by handle, so it has to follow, or that controller's eventual disconnect
+	// would find no description and leave as an empty one.
+	HandedOverHandle = JSL4UModule.GetOnDeviceHandedOver().AddWeakLambda(this, [this](int32 OldDeviceId, int32 NewDeviceId)
+	{
+		LastControllerInfoByDeviceId.Remove(OldDeviceId);
+		LastControllerInfoByDeviceId.Add(NewDeviceId, UJoyShockLibrary::GetControllerInfoForHandle(NewDeviceId));
+	});
+
 	PairingChangedHandle = JSL4UModule.GetOnJoyConPairingChanged().AddWeakLambda(this,
 		[this](int32 LeftDeviceId, int32 RightDeviceId, bool bJoined)
 		{
@@ -80,6 +90,10 @@ void UJoyShockSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	TArray<int32> ExistingHandles;
 	UJoyShockLibrary::GetConnectedDeviceHandles(ExistingHandles);
 	int32 SeededCount = 0;
+	// Each controller already connected, with the player it starts this game on. The module outlives a
+	// game instance, so in the editor a second Play session inherits the first one's controllers, slots and
+	// Joy-Con pairings, where a packaged game starts from nothing; this line is how to see which (R-020).
+	FString Inherited;
 	for (int32 Handle : ExistingHandles)
 	{
 		const FJSL4UControllerInfo Info = UJoyShockLibrary::GetControllerInfoForHandle(Handle);
@@ -87,10 +101,13 @@ void UJoyShockSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		{
 			LastControllerInfoByDeviceId.Add(Handle, Info);
 			++SeededCount;
+			Inherited += FString::Printf(TEXT(" [#%lld %s, player %d%s]"),
+				Info.ConnectionId, *UEnum::GetDisplayValueAsText(Info.ControllerType).ToString(), Info.PlayerIndex,
+				Info.JoinedToConnectionId != 0 ? *FString::Printf(TEXT(", joined to #%lld"), Info.JoinedToConnectionId) : TEXT(""));
 		}
 	}
-	UE_LOG(LogJoyShockLibrary, Verbose, TEXT("UJoyShockSubsystem: listening for device changes (%d controller(s) already connected)."),
-		SeededCount);
+	UE_LOG(LogJoyShockLibrary, Verbose, TEXT("UJoyShockSubsystem: listening for device changes (%d controller(s) already connected)%s."),
+		SeededCount, *Inherited);
 }
 
 void UJoyShockSubsystem::ListenForControllers(FJSL4UControllerInfoConnectedSignature Event)
@@ -284,6 +301,7 @@ void UJoyShockSubsystem::Deinitialize()
 		JSL4UModule.GetOnDeviceDisconnected().Remove(DisconnectedHandle);
 		JSL4UModule.GetOnJoyConPairingChanged().Remove(PairingChangedHandle);
 		JSL4UModule.GetOnDeviceFunctionBlocked().Remove(FunctionBlockedHandle);
+		JSL4UModule.GetOnDeviceHandedOver().Remove(HandedOverHandle);
 
 		// Rumble is sustained by the polling threads, which belong to the module and keep running after the
 		// game stops -- so a controller still rumbling when the game ends would rumble until something set
@@ -291,6 +309,15 @@ void UJoyShockSubsystem::Deinitialize()
 		// *because* it crashed.) Stopping in PIE is what makes this urgent; a packaged game exiting tears
 		// the module down with it.
 		StopAllControllerRumble();
+
+		// Player slots belong to the module too, so whatever this game assigned would carry into the next one:
+		// in the editor, the next Play -- in any level -- would start with this one's choices, where a packaged
+		// game always starts from automatic slots. Measured on hardware for R-020. It also gives the editor's
+		// own menus back to the controllers the way they were before Play.
+		if (FJoyShockInterface* Interface = JSL4UModule.GetActiveInterface())
+		{
+			Interface->ResetPlayerAssignmentsToAutomatic();
+		}
 	}
 
 	ConnectedHandle.Reset();

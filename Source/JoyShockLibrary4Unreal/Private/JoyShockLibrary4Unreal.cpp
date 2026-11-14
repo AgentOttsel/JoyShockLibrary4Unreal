@@ -4,12 +4,17 @@
 #include "JoyShockBlueprintLibrary.h"
 
 #include "JoyShockInterface.h"
+#include "JoyShockEditorSettings.h"
 // For ShutdownAllDevices(), called by ShutdownModule below.
 #include "JoyShockLibrary4Unreal/JoyShockLibrary/JoyShockLibrary.h"
 #include "JoyShockLibrary4Unreal/JoyShockLibrary/Switch2Bluetooth.h"
 #include "Interfaces/IPluginManager.h"
 #include "Async/Async.h"
+#include "Containers/Ticker.h"
 #include "HAL/PlatformProcess.h"
+#if PLATFORM_WINDOWS
+#include "Windows/WindowsHWrapper.h"
+#endif
 
 #define LOCTEXT_NAMESPACE "FJoyShockLibrary4UnrealModule"
 
@@ -26,6 +31,124 @@
 // The module object outlives ShutdownModule (the manager destroys it after that returns), so a pointer
 // held here is valid for every moment a thread of ours can still be running.
 static std::atomic<FJoyShockLibrary4UnrealModule*> GLiveJoyShockModule{ nullptr };
+
+// The thread StartupModule hands the Bluetooth scan to. ShutdownModule waits for it: otherwise a close during
+// its blocking adapter query let it go on to install a discovery callback and start a scan after the
+// Bluetooth teardown had already run, leaving a radio thread calling into a module that was gone.
+static TFuture<void> GBluetoothStartup;
+
+// How the editor learns that a game wants its Bluetooth controllers (see Switch2Ble::SetYieldedToGame).
+//
+// A game process holds a named mutex for as long as it runs, and the editor checks for it twice a second. A
+// named object rather than the editor's own "Standalone launched" delegate: it covers any game with this
+// plugin -- the Standalone the editor launched, or a packaged build started beside it -- and a runtime module
+// needs nothing from the editor's modules to see it. "Local\" is the logon session, which the editor and
+// every game it launches share. The object is never waited on; its existence is the whole message, and
+// Windows removes it when the last game holding it exits, crash included.
+static const TCHAR* const GBluetoothClaimName = TEXT("Local\\JoyShockLibrary4Unreal.GameWantsBluetooth");
+#if PLATFORM_WINDOWS
+static HANDLE GBluetoothClaim = nullptr;
+#endif
+static FTSTicker::FDelegateHandle GBluetoothClaimWatcher;
+// Game thread only: the watcher's last answer, so it acts on changes rather than on every check.
+static bool GBluetoothYieldedToGame = false;
+
+// Game thread only: whether this editor has let go of every controller because of the "Connect Controllers in
+// the Editor" preference (R-040), so a change is acted on once. The polling threads and enumeration read the
+// library's own flag (SetAllControllersReleased), not this.
+static bool GEditorReleasedControllers = false;
+
+static void ApplyEditorControllerPreference(FJoyShockLibrary4UnrealModule& Module, bool bConnectControllers)
+{
+	// A Standalone game or a packaged build always connects controllers, and a commandlet takes no part.
+	if (!GIsEditor || IsRunningCommandlet())
+	{
+		return;
+	}
+
+	const bool bRelease = !bConnectControllers;
+	if (bRelease == GEditorReleasedControllers)
+	{
+		return;
+	}
+	GEditorReleasedControllers = bRelease;
+	SetAllControllersReleased(bRelease);
+
+	if (bRelease)
+	{
+		UE_LOG(LogJoyShockLibrary, Log,
+			TEXT("Connect Controllers in the Editor is off: the editor is letting go of every controller, Bluetooth included, and connects no new ones until it is back on."));
+		// The polling threads see the flag on their next report and retire their controllers. Stopping the
+		// scan is what leaves a Switch 2 free to connect to the other program when it advertises.
+		Switch2Ble::StopScan();
+	}
+	else
+	{
+		UE_LOG(LogJoyShockLibrary, Log,
+			TEXT("Connect Controllers in the Editor is on: the editor is looking for controllers again. Press a button on a Bluetooth controller to bring it back."));
+		// The enumeration pass restarts the scan, on its own thread, where a blocking adapter call costs nothing.
+		Module.RequestConnectDevices();
+	}
+}
+
+#if WITH_EDITOR
+void UJSL4UEditorSettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(UJSL4UEditorSettings, bConnectControllersInEditor))
+	{
+		SaveConfig();
+		// At once, not on the next editor start: the point is to hand the controller over without closing
+		// the editor.
+		ApplyEditorControllerPreference(FJoyShockLibrary4UnrealModule::GetInstance(), bConnectControllersInEditor);
+	}
+}
+#endif
+
+static bool IsBluetoothClaimedByGame()
+{
+#if PLATFORM_WINDOWS
+	if (HANDLE Claim = ::OpenMutexW(SYNCHRONIZE, 0, GBluetoothClaimName))
+	{
+		::CloseHandle(Claim);
+		return true;
+	}
+#endif
+	return false;
+}
+
+static void UpdateBluetoothClaim(FJoyShockLibrary4UnrealModule& Module)
+{
+	const bool bClaimed = IsBluetoothClaimedByGame();
+	if (bClaimed == GBluetoothYieldedToGame)
+	{
+		return;
+	}
+	GBluetoothYieldedToGame = bClaimed;
+	Switch2Ble::SetYieldedToGame(bClaimed);
+
+	if (bClaimed)
+	{
+		UE_LOG(LogJoyShockLibrary, Log,
+			TEXT("A game with this plugin is running on this PC: the editor is releasing its Switch 2 controllers on Bluetooth to it, leaves every controller's lights and rumble to it, and stops looking for more until it closes."));
+		// The polling threads see the flag on their next report and retire their controllers; stopping the
+		// scan here is what keeps the editor from taking them straight back when they advertise for the game.
+		Switch2Ble::StopScan();
+	}
+	else if (AreAllControllersReleased())
+	{
+		UE_LOG(LogJoyShockLibrary, Log,
+			TEXT("The game that had the Bluetooth controllers closed; Connect Controllers in the Editor is off, so the editor leaves them alone."));
+	}
+	else
+	{
+		UE_LOG(LogJoyShockLibrary, Log,
+			TEXT("The game that had the Bluetooth controllers closed: the editor is looking for them again, and sends its own lights and rumble to every controller. Press a button on a Bluetooth controller to bring it back."));
+		// The enumeration pass restarts the scan, on its own thread, where a blocking adapter call costs nothing.
+		Module.RequestConnectDevices();
+	}
+}
 
 FJoyShockLibrary4UnrealModule& FJoyShockLibrary4UnrealModule::GetInstance()
 {
@@ -114,6 +237,33 @@ void FJoyShockLibrary4UnrealModule::StartupModule()
 	// first one -- so no thread of ours ever runs without a module to reach.
 	GLiveJoyShockModule.store(this, std::memory_order_release);
 
+	// Before the Bluetooth scan below starts, so neither side ever connects a controller the other is about to
+	// claim. A commandlet is neither a game nor an editor anyone plays in, so it takes no part.
+	if (!IsRunningCommandlet())
+	{
+		if (GIsEditor)
+		{
+			// The preference as saved, so an editor opened with it off never touches a controller at all.
+			ApplyEditorControllerPreference(*this, GetDefault<UJSL4UEditorSettings>()->bConnectControllersInEditor);
+
+			GBluetoothYieldedToGame = IsBluetoothClaimedByGame();
+			Switch2Ble::SetYieldedToGame(GBluetoothYieldedToGame);
+			GBluetoothClaimWatcher = FTSTicker::GetCoreTicker().AddTicker(
+				FTickerDelegate::CreateLambda([this](float)
+				{
+					UpdateBluetoothClaim(*this);
+					return true;
+				}),
+				0.5f);
+		}
+		else
+		{
+#if PLATFORM_WINDOWS
+			GBluetoothClaim = ::CreateMutexW(nullptr, 0, GBluetoothClaimName);
+#endif
+		}
+	}
+
 	if (FSlateApplication::IsInitialized())
 	{
 		TSharedPtr<GenericApplication> Application = FSlateApplication::Get().GetPlatformApplication();
@@ -139,24 +289,28 @@ void FJoyShockLibrary4UnrealModule::StartupModule()
 	// the same coalesced enumeration pass directly.
 	//
 	// On a background thread because querying the adapter blocks, and this runs during engine startup.
-	Async(EAsyncExecution::Thread, [this]()
+	GBluetoothStartup = Async(EAsyncExecution::Thread, [this]()
 	{
-		if (bShuttingDown.load() || !Switch2Ble::IsSupported())
+		if (bShuttingDown.load() || !Switch2Ble::IsSupported() || bShuttingDown.load())
 		{
 			return;
 		}
 
-		Switch2Ble::SetDiscoveryCallback([]()
+		Switch2Ble::SetDiscoveryCallback([this]()
 		{
-			// Guarded because this runs on a radio thread, which knows nothing about the engine's lifetime:
-			// an advertisement can arrive at any moment, including after the module has gone. GetInstance
-			// would load the module back in to answer that.
-			if (FJoyShockLibrary4UnrealModule::IsAvailable())
-			{
-				FJoyShockLibrary4UnrealModule::GetInstance().RequestConnectDevices();
-			}
+			// This module, captured, rather than looked up: this runs on a radio thread, and both lookups
+			// (IsAvailable and GetInstance's fallback) go through FModuleManager, which off the game thread
+			// during shutdown fails its own check -- see GetInstance. The capture is safe because
+			// Switch2Ble::Shutdown clears this callback and waits out any call already running before
+			// ShutdownModule returns. RequestConnectDevices does nothing once shutdown has begun.
+			RequestConnectDevices();
 		});
-		Switch2Ble::StartScan();
+		// With controllers switched off in the editor the callback still goes in, so turning them back on needs
+		// only an enumeration pass, which starts the scan itself.
+		if (!AreAllControllersReleased())
+		{
+			Switch2Ble::StartScan();
+		}
 	});
 }
 
@@ -165,9 +319,21 @@ void FJoyShockLibrary4UnrealModule::ShutdownModule()
 	// Stop accepting new enumeration requests and wait for any in-flight background pass to finish
 	// before we free the hidapi DLL out from under it.
 	bShuttingDown.store(true);
+
+	if (GBluetoothClaimWatcher.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(GBluetoothClaimWatcher);
+		GBluetoothClaimWatcher.Reset();
+	}
+
 	while (bConnectRunning.load())
 	{
 		FPlatformProcess::Sleep(0.001f);
+	}
+	// Before Switch2Ble::Shutdown below, so a scan this thread starts late is still one that gets stopped.
+	if (GBluetoothStartup.IsValid())
+	{
+		GBluetoothStartup.Wait();
 	}
 
 	// Then stop the controllers themselves, before anything they use goes away. Their polling threads own a
@@ -181,6 +347,16 @@ void FJoyShockLibrary4UnrealModule::ShutdownModule()
 	// normally just the scan. Unlike the HID devices these hold WinRT objects whose callbacks fire on their
 	// own threads, so they have to be torn down before the module goes.
 	Switch2Ble::Shutdown();
+
+#if PLATFORM_WINDOWS
+	// Only now that this game has closed every Bluetooth link it held: the editor starts looking again the
+	// moment this is gone, and a controller still connected here would not be advertising for it.
+	if (GBluetoothClaim != nullptr)
+	{
+		::CloseHandle(GBluetoothClaim);
+		GBluetoothClaim = nullptr;
+	}
+#endif
 
 #if PLATFORM_WINDOWS
 	// Only once nothing can still be inside it. A polling thread that outran the wait above is still holding

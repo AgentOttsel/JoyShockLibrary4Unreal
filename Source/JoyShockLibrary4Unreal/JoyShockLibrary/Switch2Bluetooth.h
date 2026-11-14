@@ -48,6 +48,15 @@ namespace Switch2Ble
 	bool StartScan();
 	void StopScan();
 
+	// Set by the editor while a game process with this plugin is running on the same machine -- typically
+	// the Standalone game the editor itself launched. A Bluetooth link belongs to the process that opened it,
+	// and a connected controller stops advertising, so as long as the editor holds the link the game can
+	// never find the controller. While yielded, StartScan does nothing and every polling thread on a
+	// Bluetooth link retires its controller, which closes the link and lets the game's own scan take it.
+	// Process-wide and lock-free, so a polling thread can read it before every report.
+	void SetYieldedToGame(bool bYielded);
+	bool IsYieldedToGame();
+
 	// Called once for each newly discovered controller, from the radio's own thread. A controller
 	// advertising is the Bluetooth equivalent of a USB device being plugged in, and nothing else announces
 	// it -- there is no WM_DEVICECHANGE for the radio -- so without this a controller that appears while
@@ -56,6 +65,12 @@ namespace Switch2Ble
 
 	// Hands over the controllers seen since the last call and clears the pending list.
 	void DrainDiscovered(TArray<FSwitch2BleAdvertisement>& OutDiscovered);
+
+	// Offers this controller again once Seconds have passed, instead of never. A drained controller is
+	// suppressed until a connection to it ends, which is right for one that was taken -- but one that was
+	// turned down without connecting would then not be offered again for the rest of the session, not even
+	// after its owner holds SYNC to pair it here.
+	void SuppressFor(uint64 Address, double Seconds);
 
 	// Connects, discovers the service's characteristics and subscribes to input. Blocking, and slow enough
 	// (a second or more) that it must never be called from the game thread. Returns null on failure.

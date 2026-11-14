@@ -11,6 +11,7 @@
 // Split out of JoyShockLibrary.cpp; the registry it fills is declared in JoyShockInternal.h.
 
 #include "JoyShockBlueprintLibrary.h"
+#include "JoyShockLibrary4Unreal/JoyShockLibrary/JoyShockLibrary.h"
 #include <bitset>
 #include "hidapi.h"
 #include <chrono>
@@ -226,6 +227,15 @@ static void discover_hid_devices(TSet<FString>& TrackedPaths, TMap<FString, FTra
 static void discover_bluetooth_switch2(TSet<FString>& TrackedPaths, TMap<FString, FTrackedIdentity>& TrackedByMac,
 	TArray<JoyShock*>& NewDevices, TSet<FString>& NewMacsThisPass)
 {
+	// A game on this machine has the Bluetooth controllers (see Switch2Ble::SetYieldedToGame): connecting one
+	// here would take it straight back from the game.
+	if (Switch2Ble::IsYieldedToGame())
+	{
+		TArray<FSwitch2BleAdvertisement> Ignored;
+		Switch2Ble::DrainDiscovered(Ignored);
+		return;
+	}
+
 	if (Switch2Ble::IsSupported())
 	{
 		// Scanning is what makes a controller appear when its SYNC button is held, so it runs from the
@@ -262,6 +272,39 @@ static void discover_bluetooth_switch2(TSet<FString>& TrackedPaths, TMap<FString
 				// it is lower latency, and taking the radio link as well would give one controller two
 				// device ids and two player slots.
 				continue;
+			}
+
+			// Only a controller in pairing mode (no host) or one bonded to this PC. One bonded elsewhere --
+			// a Switch 2 console in the same room -- advertises too when its owner presses a button to use
+			// the console, and connecting to it would take the controller away from them. Holding SYNC on it
+			// clears the host, and then it is taken and paired here.
+			//
+			// The host in the advertisement is in the same byte order GetHostAddress returns, so the two
+			// compare as they are (measured with the Unity port of this code).
+			if (Advertisement.ReconnectMac != 0)
+			{
+				const uint64 HostAddress = Switch2Ble::GetHostAddress();
+				if (HostAddress != 0 && Advertisement.ReconnectMac != HostAddress)
+				{
+					static FCriticalSection LoggedLock;
+					static TSet<uint64> LoggedAddresses;
+					bool bFirstTime = false;
+					{
+						FScopeLock Lock(&LoggedLock);
+						bool bAlreadyLogged = false;
+						LoggedAddresses.Add(Advertisement.Address, &bAlreadyLogged);
+						bFirstTime = !bAlreadyLogged;
+					}
+					if (bFirstTime)
+					{
+						UE_LOG(LogJoyShockLibrary, Log,
+							TEXT("\tleaving Bluetooth controller %s alone: it is paired with another device (%012llx). Hold SYNC on it to pair it with this PC.\n"),
+							*BlePath, Advertisement.ReconnectMac);
+					}
+					// Offered again shortly, so holding SYNC is noticed without restarting anything.
+					Switch2Ble::SuppressFor(Advertisement.Address, 2.0);
+					continue;
+				}
 			}
 
 			FSwitch2BleConnection* Connection = Switch2Ble::Connect(Advertisement.Address);
@@ -376,7 +419,9 @@ static void bring_devices_online(const TArray<JoyShock*>& DevicesToBringOnline)
 		// DS4 has no separate player indicator, but its RGB light bar and rumble start in the same report.
 		// This is safe before its polling thread exists. All later output, including every numeric player
 		// indicator, is written by that controller's polling thread.
-		if (jc->controller_type == ControllerType::s_ds4)
+		// Not from an editor with a game running beside it, which leaves the light to the game (see
+		// send_pending_output_reports); the polling thread sends it once the game closes.
+		if (jc->controller_type == ControllerType::s_ds4 && !Switch2Ble::IsYieldedToGame())
 		{
 			jc->set_ds4_rumble_light(0, 0, jc->led_r, jc->led_g, jc->led_b);
 		}
@@ -391,6 +436,16 @@ static void bring_devices_online(const TArray<JoyShock*>& DevicesToBringOnline)
 int32 UJoyShockLibrary::ConnectDevices()
 {
 	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
+
+	// Controllers are switched off in the editor (R-040). Before any open, so nothing is touched, and before
+	// discover_bluetooth_switch2, which would start the scan again. Advertisements that arrived meanwhile are
+	// dropped: a controller wanting this editor will advertise again once the option is back on.
+	if (AreAllControllersReleased())
+	{
+		TArray<FSwitch2BleAdvertisement> Ignored;
+		Switch2Ble::DrainDiscovered(Ignored);
+		return 0;
+	}
 
 	// for writing to console:
 	//freopen("CONOUT$", "w", stdout);
@@ -466,6 +521,10 @@ int32 UJoyShockLibrary::ConnectDevices()
 		_byPath.Emplace(Upgrade.Path, ExistingDevice);
 	}
 
+	// Freed after the lock is released, not here: destroying a Bluetooth Switch 2 closes its GATT session and
+	// device synchronously, and every device getter on the game thread waits on this lock. Nothing else can
+	// reach these -- they never entered the maps.
+	TArray<JoyShock*> RaceLosers;
 	for (JoyShock* jc : NewDevices)
 	{
 		// The path may have been claimed while phase 2 ran (a transport switch, or a concurrent caller of
@@ -489,7 +548,7 @@ int32 UJoyShockLibrary::ConnectDevices()
 			// (Safe to take the handle lock under _connectedLock: nothing takes them the other way round.)
 			const FString Identity = jc->handle_identity;
 			const int32 DiscardedHandle = jc->intHandle;
-			delete jc;
+			RaceLosers.Add(jc);
 			if (!_joyshocks.Contains(DiscardedHandle))
 			{
 				ReleaseUniqueHandle(Identity);
@@ -523,6 +582,11 @@ int32 UJoyShockLibrary::ConnectDevices()
 	const int32 totalDevices = _joyshocks.Num();
 
 	JSL4UModule._connectedLock.unlock();
+
+	for (JoyShock* jc : RaceLosers)
+	{
+		delete jc;
+	}
 
 	bring_devices_online(DevicesToBringOnline);
 

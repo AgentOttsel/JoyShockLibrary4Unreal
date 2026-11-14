@@ -21,12 +21,14 @@
 #include "JoyShockLibrary4Unreal/JoyShockLibrary/InputHelpers.h"
 #include "JoyShockLibrary4Unreal.h"
 #include "JoyShockInterface.h"
+#include "JoyShockStickTable.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/InputDeviceSubsystem.h"
 #include "GenericPlatform/GenericPlatformInputDeviceMapper.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "UObject/Stack.h"
 #include "JoyShockLibrary4Unreal/JoyShockLibrary/JoyShockInternal.h"
 
 int32 UJoyShockLibrary::GetConnectedDeviceHandles(TArray<int32>& OutDeviceHandleArray)
@@ -209,7 +211,10 @@ FQuat UJoyShockLibrary::GetJoyConGripUndoRotation(bool bHorizontal, bool bIsLeft
 	{
 		return FQuat::Identity;
 	}
-	return FQuat(FVector::UpVector, bIsLeft ? -HALF_PI : HALF_PI);
+	// The direction is the stick table's, so stick and motion cannot be turned opposite ways.
+	const bool bCounterClockwise =
+		JSL4UStickTable::SidewaysTurnForJoyConHalf(bIsLeft) == JSL4UStickTable::ESidewaysTurn::CounterClockwise;
+	return FQuat(FVector::UpVector, bCounterClockwise ? -HALF_PI : HALF_PI);
 }
 
 // The rotation that undoes the grip of the controller this handle names, or identity for anything that is
@@ -228,6 +233,29 @@ static FQuat GripUndoRotationForHandle(int32 Handle)
 		return FQuat::Identity;
 	}
 	return UJoyShockLibrary::GetJoyConGripUndoRotation(bHorizontal, bIsLeft);
+}
+
+// Both sticks of the controller this handle names, as Unreal input receives them: through the stick table,
+// with a sideways Joy-Con's stick turned into its grip. Reading simple_state directly skipped both, so a
+// getter disagreed with the input it is documented to match.
+//
+// The grip is asked for first, for the lock order GripUndoRotationForHandle describes.
+static void PresentedSticksForHandle(int32 Handle, FVector2D& OutLeft, FVector2D& OutRight)
+{
+	FJoyShockInterface* Interface = FJoyShockLibrary4UnrealModule::GetInstance().GetActiveInterface();
+	bool bHorizontal = false;
+	bool bIsLeft = false;
+	if (Interface != nullptr)
+	{
+		Interface->GetJoyConGrip(Handle, bHorizontal, bIsLeft);
+	}
+	const FName Identifier = FJoyShockInterface::GetHardwareDeviceIdentifier(Handle);
+	const FJoyShockState State = UJoyShockLibrary::GetSimpleStateForHandle(Handle);
+
+	float LeftX, LeftY, RightX, RightY;
+	JSL4UStickTable::PresentSticks(State, Identifier, bHorizontal, LeftX, LeftY, RightX, RightY);
+	OutLeft = FVector2D(LeftX, LeftY);
+	OutRight = FVector2D(RightX, RightY);
 }
 
 // Takes a whole motion state out of a sideways Joy-Con's frame. Identity does nothing, so callers need no
@@ -294,7 +322,12 @@ static int32 HandleForConnection(int64 ConnectionId)
 	// zeroes are the honest answer for hardware without the sensor. Anything else reaching here is an id
 	// that names no live controller of ours: an uninitialised 0, or one whose controller is gone. Said once
 	// per id, so a getter in a Tick cannot bury the log.
-	if (Handle == INDEX_NONE && ConnectionId >= 0)
+	// A parked Pro Controller 2 reads zeroes for a few seconds on purpose; that is not an unservable id.
+	// Nor is one that has only just left: the game is told a frame or more after it goes, and every Tick
+	// reader of it lands in that gap once. Skipped without being remembered, so a read still arriving after
+	// the grace is warned about as usual.
+	if (Handle == INDEX_NONE && ConnectionId >= 0
+		&& !(Interface != nullptr && (Interface->IsParkedConnection(ConnectionId) || Interface->HasConnectionJustEnded(ConnectionId))))
 	{
 		static const TCHAR* ReadingSite = TEXT("JSL4U reading");
 		bool bAlreadyWarned = false;
@@ -324,12 +357,16 @@ static int32 HandleForConnection(int64 ConnectionId)
 					Live = FString::JoinBy(LiveIds, TEXT(", "), [](int64 Id) { return LexToString(Id); });
 				}
 			}
+			// Said once per id, so this line is the only clue there will be: it has to name the Blueprint
+			// that asked, or the reader cannot be found from the log. Empty in a build without Blueprint
+			// guards (Shipping), where the rest of the line still stands.
+			const FString AskedFrom = FFrame::GetScriptCallstack(/*bReturnEmpty*/ true);
 			UE_LOG(LogJoyShockLibrary, Warning,
 				TEXT("JSL4U: asked to read connection %lld, which is not a connected controller, so every ")
 				TEXT("reading for it is zero. Connected right now: %s. A 0 here means the Blueprint passed an ")
 				TEXT("unset variable -- Connection Id comes from the controller info a Wait For ... Changes ")
-				TEXT("pin or Get All Connected Controllers handed you."),
-				ConnectionId, *Live);
+				TEXT("pin or Get All Connected Controllers handed you.%s%s"),
+				ConnectionId, *Live, AskedFrom.IsEmpty() ? TEXT("") : TEXT(" Asked from:\n"), *AskedFrom);
 		}
 	}
 	return Handle;
@@ -430,6 +467,14 @@ TArray<FJSL4UControllerInfo> UJoyShockLibrary::JSL4UGetConnectedControllers()
 		{
 			Result.Add(MoveTemp(Entry.Value));
 		}
+	}
+
+	// A Pro Controller 2 parked between cable and Bluetooth is still connected as far as the game knows; left
+	// out, it vanished from this list for a few seconds and its still-mapped device came back from Get All
+	// Connected Controllers as an undriven pad.
+	if (Interface != nullptr)
+	{
+		Result.Append(Interface->GetParkedControllerInfos());
 	}
 
 	// Connection order, which is what the ids count. It used to be handle order, and for the plugin's own
@@ -858,7 +903,10 @@ bool UJoyShockLibrary::JSL4UIsControllerConnected(int64 ConnectionId)
 
 	// For ours, the id resolving at all already means a live connection -- the interface only answers for
 	// handles it has connected -- and the library-side test below then agrees with what the listings show.
-	const int32 DeviceId = HandleForConnection(ConnectionId);
+	// Asked of the interface directly, not through HandleForConnection: checking whether a stored id is still
+	// live is exactly what a game should do with it, so "no" is the answer here, not a mistake to warn about.
+	FJoyShockInterface* Interface = FJoyShockLibrary4UnrealModule::GetInstance().GetActiveInterface();
+	const int32 DeviceId = Interface != nullptr ? Interface->GetHandleForConnection(ConnectionId) : INDEX_NONE;
 
 	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
 
@@ -909,13 +957,15 @@ FJoyShockState UJoyShockLibrary::GetSimpleStateForHandle(int32 deviceId)
 FJSL4UJoyShockState UJoyShockLibrary::JSL4UGetControllerState(int64 ConnectionId)
 {
 	const int32 DeviceId = HandleForConnection(ConnectionId);
+	FVector2D LeftStick, RightStick;
+	PresentedSticksForHandle(DeviceId, LeftStick, RightStick);
 	const FJoyShockState& LegacySimpleState = GetSimpleStateForHandle(DeviceId);
 	return {
 		.Buttons = LegacySimpleState.buttons,
 		.LeftTrigger = LegacySimpleState.lTrigger,
 		.RightTrigger = LegacySimpleState.rTrigger,
-		.LeftStick = FVector2D(LegacySimpleState.stickLX, LegacySimpleState.stickLY),
-		.RightStick = FVector2D(LegacySimpleState.stickRX, LegacySimpleState.stickRY)
+		.LeftStick = LeftStick,
+		.RightStick = RightStick
 	};
 }
 
@@ -1114,31 +1164,16 @@ bool UJoyShockLibrary::GetTouchpadDimensionForHandle(int32 deviceId, int32 &size
 
 FVector2D UJoyShockLibrary::JSL4UGetLeftStick(int64 ConnectionId)
 {
-	const int32 DeviceId = HandleForConnection(ConnectionId);
-	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
-	
-	std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._connectedLock);
-	
-	JoyShock* jc = GetJoyShockFromHandle(DeviceId);
-	if (jc != nullptr)
-	{
-		return FVector2D(jc->simple_state.stickLX, jc->simple_state.stickLY);
-	}
-	return FVector2D::ZeroVector;
+	FVector2D Left, Right;
+	PresentedSticksForHandle(HandleForConnection(ConnectionId), Left, Right);
+	return Left;
 }
 
 FVector2D UJoyShockLibrary::JSL4UGetRightStick(int64 ConnectionId)
 {
-	const int32 DeviceId = HandleForConnection(ConnectionId);
-	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
-	
-	std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._connectedLock);
-	
-	JoyShock* jc = GetJoyShockFromHandle(DeviceId);
-	if (jc != nullptr) {
-		return FVector2D(jc->simple_state.stickRX, jc->simple_state.stickRY);
-	}
-	return FVector2D::ZeroVector;
+	FVector2D Left, Right;
+	PresentedSticksForHandle(HandleForConnection(ConnectionId), Left, Right);
+	return Right;
 }
 
 void UJoyShockLibrary::GetAndFlushAccumulatedGyroForHandle(int32 deviceId, float& gyroX, float& gyroY, float& gyroZ)
@@ -1150,6 +1185,20 @@ void UJoyShockLibrary::GetAndFlushAccumulatedGyroForHandle(int32 deviceId, float
 	JoyShock* jc = GetJoyShockFromHandle(deviceId);
 	if (jc != nullptr) {
 		jc->get_and_flush_cumulative_gyro(gyroX, gyroY, gyroZ);
+		return;
+	}
+	gyroX = gyroY = gyroZ = 0.f;
+}
+
+void UJoyShockLibrary::GetFrameGyroForHandle(int32 deviceId, float& gyroX, float& gyroY, float& gyroZ)
+{
+	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
+
+	std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._connectedLock);
+
+	JoyShock* jc = GetJoyShockFromHandle(deviceId);
+	if (jc != nullptr) {
+		jc->get_frame_gyro(GFrameCounter, gyroX, gyroY, gyroZ);
 		return;
 	}
 	gyroX = gyroY = gyroZ = 0.f;
@@ -1239,6 +1288,26 @@ float UJoyShockLibrary::JSL4UGetSecondsSinceLastReport(int64 ConnectionId)
 {
 	const int32 DeviceId = HandleForConnection(ConnectionId);
 	return GetTimeSinceLastUpdateForHandle(DeviceId);
+}
+
+float UJoyShockLibrary::JSL4UGetReportsPerSecond(int64 ConnectionId)
+{
+	const int32 DeviceId = HandleForConnection(ConnectionId);
+	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
+	std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._connectedLock);
+
+	JoyShock* jc = GetJoyShockFromHandle(DeviceId);
+	if (jc == nullptr)
+	{
+		return 0.0f;
+	}
+	// The rate is only republished when a report closes its window, so a controller gone quiet would go on
+	// showing the rate it had. A second with nothing at all is a rate of zero.
+	if (std::chrono::steady_clock::now() - jc->last_polled > std::chrono::seconds(1))
+	{
+		return 0.0f;
+	}
+	return jc->reports_per_second.load();
 }
 
 float UJoyShockLibrary::GetStickStepForHandle(int32 deviceId)
@@ -1510,6 +1579,17 @@ FJSL4UControllerInfo UJoyShockLibrary::JSL4UGetControllerInfo(int64 ConnectionId
 		return JSL4UDescribeUndrivenDevice(DeviceMapper.GetUserForInputDevice(InputDevice), InputDevice);
 	}
 
+	if (FJoyShockInterface* Interface = FJoyShockLibrary4UnrealModule::GetInstance().GetActiveInterface())
+	{
+		for (const FJSL4UControllerInfo& Parked : Interface->GetParkedControllerInfos())
+		{
+			if (Parked.ConnectionId == ConnectionId)
+			{
+				return Parked;
+			}
+		}
+	}
+
 	return GetControllerInfoForHandle(HandleForConnection(ConnectionId));
 }
 
@@ -1528,6 +1608,23 @@ FJSL4URawSettings UJoyShockLibrary::GetControllerSettingsForHandle(int32 deviceI
 }
 
 // what split type of controller is this?
+FString UJoyShockLibrary::GetSwitch2IdentityForHandle(int32 deviceId)
+{
+	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
+
+	std::shared_lock<std::shared_timed_mutex> lock(JSL4UModule._connectedLock);
+
+	JoyShock* jc = GetJoyShockFromHandle(deviceId);
+	if (jc == nullptr || !jc->is_switch2)
+	{
+		return FString();
+	}
+	jc->modifying_lock.Lock();
+	const FString Identity = jc->sw2_info_identity;
+	jc->modifying_lock.Unlock();
+	return Identity;
+}
+
 int32 UJoyShockLibrary::GetControllerTypeForHandle(int32 deviceId)
 {
 	FJoyShockLibrary4UnrealModule& JSL4UModule = FJoyShockLibrary4UnrealModule::GetInstance();
@@ -1710,6 +1807,7 @@ FJSL4USwitch2Sensors UJoyShockLibrary::JSL4UGetSwitch2Sensors(int64 ConnectionId
 	// pair of numbers that has to agree with itself, and the newest reading of each is what a caller wants.
 	Sensors.bIsSupported = true;
 	Sensors.BatteryVolts = jc->sw2_battery_volts.load();
+	Sensors.BatteryCurrent = jc->sw2_battery_current.load();
 	Sensors.TemperatureCelsius = jc->sw2_temperature_celsius.load();
 	Sensors.Magnetometer = FVector(
 		jc->sw2_magnetometer_x.load(), jc->sw2_magnetometer_y.load(), jc->sw2_magnetometer_z.load());

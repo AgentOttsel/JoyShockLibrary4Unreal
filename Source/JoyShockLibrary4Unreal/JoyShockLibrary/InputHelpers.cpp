@@ -188,19 +188,6 @@ static bool parse_switch2_report(JoyShock* jc, uint8_t* packet, int32 len, FIMUS
 			jc->simple_state.stickRX = normStickFallback(rx);
 			jc->simple_state.stickRY = normStickFallback(ry);
 		}
-		// The right slot's Y axis is reported inverted relative to the left one's (confirmed on a Pro
-		// Controller 2), so negate it to make up positive on both sticks.
-		//
-		// Only on a whole controller. A right Joy-Con's stick is normalised once, in FJoyShockInterface,
-		// exactly as the Switch 1 right half's is -- the note on the Switch 1 Pro's branch further down
-		// spells out why the two places must not both do it. Doing it here as well cancelled out, which
-		// is what sent a Joy-Con 2 (R) up as down in the vertical grip and left as right in the
-		// horizontal one (reported on hardware; the left half was unaffected because it never reaches
-		// this branch).
-		if (bWhole)
-		{
-			jc->simple_state.stickRY = -jc->simple_state.stickRY;
-		}
 	}
 
 	// Switch controllers only report ZL/ZR digitally; surface them as full triggers when pressed.
@@ -221,6 +208,21 @@ static bool parse_switch2_report(JoyShock* jc, uint8_t* packet, int32 len, FIMUS
 			jc->battery_percent.store(percent);
 			jc->battery_level.store(BatteryLevelFromPercent(percent));
 		}
+		// The byte after the voltage is a charge state, not half of a current, though Switch2Connect -- and
+		// this parser after it -- read it as one (ndeadly's switch2_controller_research, F-009). Measured on a
+		// Pro Controller 2: 0 on battery, 0x24 to 0x3C while charging on the cable, and 0x20 once the charge
+		// light goes out with the cable still in. So 0x20 alone is external power with nothing going in, and
+		// only a value above it is charging.
+		const uint8_t chargeState = packet[34];
+		jc->battery_charging.store(chargeState > 0x20);
+	}
+	// The battery current follows the charge state. Per ndeadly only a Joy-Con 2 reports it, and only with
+	// feature bit 0x20, which neither init here asks for over Bluetooth, so it reads zero on every controller
+	// today; asking for it on a Pro Controller 2 over Bluetooth still gave zero. The scale is Switch2Connect's
+	// and unconfirmed.
+	if (len >= 37)
+	{
+		jc->sw2_battery_current.store(uint16_to_int16(packet[35] | (packet[36] << 8)) / 100.0f);
 	}
 
 	// The remaining sensors. None of these is motion, and nothing outside this family reports them, so
@@ -428,12 +430,12 @@ static bool parse_ds4_report(JoyShock* jc, uint8_t* packet, int32 len, FIMUState
 		if (jc->simple_state.lTrigger > 0.0) jc->simple_state.buttons |= JSMASK_ZL;
 
 		uint16_t stick_x = packet[indexOffset+1];
+		// Each Y counts from the top, so up is the low byte. Left in that sign: the stick table turns it,
+		// in JoyShockStickTable.cpp.
 		uint16_t stick_y = packet[indexOffset+2];
-		stick_y = 255 - stick_y;
 
 		uint16_t stick2_x = packet[indexOffset+3];
 		uint16_t stick2_y = packet[indexOffset+4];
-		stick2_y = 255 - stick2_y;
 
 		jc->simple_state.stickLX = (std::fmin)(1.0f, (stick_x - 127.0f) / 127.0f);
 		jc->simple_state.stickLY = (std::fmin)(1.0f, (stick_y - 127.0f) / 127.0f);
@@ -579,11 +581,9 @@ static bool parse_dualsense_report(JoyShock* jc, uint8_t* packet, int32 len, FIM
         uint16_t stick_x = packet[indexOffset + 0];
         uint16_t stick_y = packet[indexOffset + 1];
 
-	stick_y = 255 - stick_y;
-
+	// Up is the low byte, as on the DualShock 4; the stick table turns it.
 	uint16_t stick2_x = packet[indexOffset + 2];
 	uint16_t stick2_y = packet[indexOffset + 3];
-	stick2_y = 255 - stick2_y;
 
 	jc->simple_state.stickLX = (std::fmin)(1.0f, (stick_x - 127.0f) / 127.0f);
 	jc->simple_state.stickLY = (std::fmin)(1.0f, (stick_y - 127.0f) / 127.0f);
@@ -710,14 +710,6 @@ static void parse_switch_report(JoyShock* jc, uint8_t* packet, int32 len, FIMUSt
 				stick_y2,
 				jc->stick_cal_x_r,
 				jc->stick_cal_y_r);
-			// Nintendo reports the right stick's Y axis with the opposite sign from the left stick's --
-			// the same quirk the Switch 2 Pro Controller has, and the same one the right Joy-Con is
-			// corrected for in FJoyShockInterface. This is the only place it was missing, which made the
-			// Switch 1 Pro Controller the one family whose right stick pushed "up" as a negative value
-			// while every other controller pushed it positive. Only this branch (left_right == 3, a whole
-			// controller) needs it: a right Joy-Con fills stickR from the branch above and is normalised
-			// once, in the interface -- doing it here as well would cancel out.
-			jc->simple_state.stickRY = -jc->simple_state.stickRY;
 		}
 
 		// Byte 2 of the standard report carries the charge in bits 5-7 and the charging flag in bit 4.
@@ -922,6 +914,18 @@ bool handle_input(JoyShock* jc, uint8_t* packet, int32 len, bool &hasIMU) {
 	auto time_now = std::chrono::steady_clock::now();
 	jc->delta_time = (float)(std::chrono::duration_cast<std::chrono::microseconds>(time_now - jc->last_polled).count() / 1000000.0);
 	jc->last_polled = time_now;
+
+	// A window closes only when a report arrives, so a controller that stops reporting keeps its last rate
+	// here; the getter answers zero for it instead.
+	jc->reports_in_rate_window++;
+	const auto rateWindow = time_now - jc->report_rate_window_start;
+	if (rateWindow >= std::chrono::seconds(1))
+	{
+		const double windowSeconds = std::chrono::duration<double>(rateWindow).count();
+		jc->reports_per_second.store(static_cast<float>(jc->reports_in_rate_window / windowSeconds));
+		jc->reports_in_rate_window = 0;
+		jc->report_rate_window_start = time_now;
+	}
 
 	if (jc->cue_motion_reset)
 	{

@@ -39,15 +39,6 @@ bool IsJoyConRightIdentifier(const FName& Identifier)
 {
 	return Identifier == TEXT("JoyConRight") || Identifier == TEXT("JoyCon2Right");
 }
-// The two Sony pads, which share a report layout and therefore a stick convention. Kept as one test
-// because every place that cares is a place where they behave identically -- naming only the DualShock 4
-// is what left the DualSense's right stick inverted against every other controller for as long as the
-// convention has existed. Their parser branches invert the raw Y byte the same way; if a third Sony pad
-// ever arrives parsed by that same code, it belongs here too.
-bool IsSonyIdentifier(const FName& Identifier)
-{
-	return Identifier == TEXT("DualShock4") || Identifier == TEXT("DualSense");
-}
 FJoyShockInterface::FJoyConPairingChange FJoyShockInterface::MakeJoyConPairingChange(
 	int32 HandleA, int32 HandleB, bool bJoined) const
 {
@@ -322,6 +313,17 @@ void FJoyShockInterface::RefreshPlayerAssignments()
 			// controller claimed player 0 even with an Xbox pad already sitting there, and both drove the
 			// same character. Skipping occupied slots is what makes a JoyShock controller land where a
 			// second Xbox pad would have, so a game does not need one scheme for XInput and another for us.
+			// A Pro Controller 2 parked on its way between cable and Bluetooth still owns its slot.
+			if (!bSlotTaken && ParkedSwitch2s.ContainsByPredicate([Slot](const FParkedSwitch2& Parked)
+				{
+					return Parked.PlayerSlot == Slot;
+				}))
+			{
+				bSlotTaken = true;
+				++Slot;
+				continue;
+			}
+
 			if (!bSlotTaken && IsPlayerSlotClaimedByAnotherDevice(Slot))
 			{
 				bSlotTaken = true;
@@ -501,6 +503,21 @@ bool FJoyShockInterface::IsJoinPrimary(int32 Handle) const
 	FScopeLock ContainerLock(&ControllerContainerLock);
 	return GetGroupPrimary(Handle) == Handle;
 }
+void FJoyShockInterface::ResetPlayerAssignmentsToAutomatic()
+{
+	FScopeLock ContainerLock(&ControllerContainerLock);
+
+	// Only the slots. The controllers stay connected on purpose: tearing them down to start clean would rerun
+	// their init on live Bluetooth links, which is what retires working controllers. And a joined pair stays
+	// joined, because joining is something the player did, not something a game chose.
+	//
+	// Emptying the map makes RefreshPlayerAssignments treat every controller as newly connected, which hands
+	// out the lowest free slots in handle order -- the order a fresh launch connects them in -- and moves the
+	// player lights with them.
+	PlayerSlotByPrimary.Reset();
+	RefreshPlayerAssignments();
+}
+
 bool FJoyShockInterface::SetPlayerIndexForDevice(int32 Handle, int32 PlayerIndex)
 {
 	FScopeLock ContainerLock(&ControllerContainerLock);

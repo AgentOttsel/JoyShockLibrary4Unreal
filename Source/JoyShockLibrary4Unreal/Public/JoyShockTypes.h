@@ -372,8 +372,8 @@ enum class EJSL4UControllerType : uint8
  * percentage would be invented precision. Sony controllers report finer steps, which are bucketed into
  * the same five so a game can treat every controller the same way.
  *
- * Unknown is not "flat" -- it means this controller does not report charge (the Switch 2 Pro Controller,
- * currently), or none has arrived yet. Compare against it explicitly before treating a value as low.
+ * Unknown is not "flat" -- it means this controller does not report charge, or none has arrived yet.
+ * Compare against it explicitly before treating a value as low.
  */
 UENUM(BlueprintType)
 enum class EJSL4UBatteryLevel : uint8
@@ -646,6 +646,12 @@ struct JOYSHOCKLIBRARY4UNREAL_API FJSL4USwitch2Sensors
 	// better thing to drive a UI from. This is here for a readout that wants the measurement itself.
 	UPROPERTY(BlueprintReadOnly)
 	float BatteryVolts = 0.f;
+
+	// The battery current, in amps, as the two bytes after the charge state read signed and divided by 100 --
+	// Switch2Connect's scale, unconfirmed. Zero on every controller today: only a Joy-Con 2 reports it, and
+	// only with a feature the plugin does not ask for. Is Charging does not come from it.
+	UPROPERTY(BlueprintReadOnly)
+	float BatteryCurrent = 0.f;
 
 	// Treat as unconfirmed. A pair on the same desk at the same room temperature read 25 and 36, and the 25
 	// is exactly the constant this is offset from -- so that half's raw field was zero, and the offset is a

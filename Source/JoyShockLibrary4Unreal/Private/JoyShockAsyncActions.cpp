@@ -313,8 +313,8 @@ bool UJSL4UWaitForBatteryChanges::Poll(float /*DeltaTime*/)
 			OnChargingChanged.Broadcast(Info, Info.bIsCharging);
 		}
 
-		// Unknown is not a low battery: the Switch 2 Pro Controller reports it always, and every
-		// controller reports it until its first input report arrives.
+		// Unknown is not a low battery: every controller reports it until its first input report arrives,
+		// and one that does not report charge reports it always.
 		const bool bIsLow = Info.BatteryLevel != EJSL4UBatteryLevel::Unknown
 			&& Info.BatteryLevel <= WarnLevel
 			&& !Info.bIsCharging;
